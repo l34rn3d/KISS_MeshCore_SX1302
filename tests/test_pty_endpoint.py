@@ -41,3 +41,15 @@ def test_pty_endpoint_uses_raw_mode_for_binary_kiss_frames(tmp_path):
             os.close(slave_fd)
     finally:
         asyncio.run(endpoint.stop())
+
+
+def test_pty_endpoint_survives_client_disconnect(tmp_path):
+    link = tmp_path / "sx1302-kiss"
+    endpoint = PtyEndpoint(symlink=str(link))
+    try:
+        asyncio.run(endpoint.start())
+        slave_fd = os.open(endpoint.slave_name, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
+        os.close(slave_fd)
+        assert asyncio.run(endpoint.read_bytes()) == b""
+    finally:
+        asyncio.run(endpoint.stop())

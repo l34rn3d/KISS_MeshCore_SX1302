@@ -25,7 +25,10 @@ async def run(config_path: str) -> None:
     async def kiss_loop():
         while not stop.is_set():
             try:
-                for frame in kiss.codec.feed(await kiss.read_bytes()): await service.handle_kiss_frame(frame)
+                data = await kiss.read_bytes()
+                if not data:
+                    await asyncio.sleep(0.05); continue
+                for frame in kiss.codec.feed(data): await service.handle_kiss_frame(frame)
             except KissDecodeError as exc:
                 counters.kiss_decode_error_count += 1; await mqtt.publish_event('kiss/error', {'status':'decode_error','error':str(exc)}); ring.add({'direction':'kiss','status':'decode_error','error':str(exc)})
     async def rx_loop():

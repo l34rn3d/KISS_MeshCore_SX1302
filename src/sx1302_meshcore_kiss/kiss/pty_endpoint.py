@@ -1,5 +1,5 @@
 from __future__ import annotations
-import asyncio, os, pty, tty
+import asyncio, errno, os, pty, tty
 from pathlib import Path
 from sx1302_meshcore_kiss.kiss.codec import KissCodec, encode_frame
 
@@ -21,7 +21,12 @@ class PtyEndpoint:
         if p.exists() or p.is_symlink(): p.unlink()
     async def read_bytes(self, max_bytes: int = 4096) -> bytes:
         if self.master_fd is None: raise RuntimeError("PTY not started")
-        return await asyncio.to_thread(os.read, self.master_fd, max_bytes)
+        try:
+            return await asyncio.to_thread(os.read, self.master_fd, max_bytes)
+        except OSError as exc:
+            if exc.errno == errno.EIO:
+                return b""
+            raise
     async def write_frame(self, command: int, payload: bytes) -> None:
         if self.master_fd is None: raise RuntimeError("PTY not started")
         await asyncio.to_thread(os.write, self.master_fd, encode_frame(command, payload))
