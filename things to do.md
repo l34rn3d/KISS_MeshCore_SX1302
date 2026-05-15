@@ -14,9 +14,52 @@ Last verified state:
 25 tests passing
 ```
 
-## 1. Real WM1302/SX1302 hardware validation
+## 1. Align MeshCore SetHardware `0x06` protocol handling
 
-This is the biggest remaining gap. The code is unit-tested, but not yet proven on real concentrator hardware.
+The later `kiss_modem_protocol.md` reference clarifies that MeshCore extensions use standard KISS `SetHardware 0x06`; the first payload byte is the MeshCore sub-command.
+
+Current daemon partially predates that clarification and currently emits these as direct KISS command/type bytes:
+
+```text
+0xF8 TxDone
+0xF9 RxMeta
+```
+
+Correct protocol shape from `kiss_modem_protocol.md` is:
+
+```text
+FEND 0x06 0xF8 <result> FEND   # TxDone SetHardware event
+FEND 0x06 0xF9 <snr_x4> <rssi> FEND   # RxMeta SetHardware event
+```
+
+Also missing/partial SetHardware request handling:
+
+- `0x06 0x09 SetRadio`
+- `0x06 0x0A SetTxPower`
+- `0x06 0x0B GetRadio`
+- `0x06 0x0C GetTxPower`
+- `0x06 0x0D GetCurrentRssi`
+- `0x06 0x0E IsChannelBusy`
+- `0x06 0x0F GetAirtime`
+- `0x06 0x10 GetNoiseFloor`
+- `0x06 0x11 GetVersion`
+- `0x06 0x12 GetStats`
+- `0x06 0x19 SetSignalReport`
+- `0x06 0x1A GetSignalReport`
+
+Crypto/device identity/sensors commands can initially return `Error NoCallback` where unsupported.
+
+Acceptance:
+
+- `TxDone` and `RxMeta` are encoded as SetHardware frames, not direct type bytes
+- standard KISS data frames remain unchanged
+- standard KISS clients still ignore SetHardware frames safely
+- supported SetHardware queries return correct little-endian responses
+- unsupported SetHardware subcommands return `Error 0xF1` with a useful error code
+
+## 2. Real WM1302/SX1302 hardware validation
+
+This is the biggest hardware gap. The code is unit-tested, but not yet proven on real concentrator hardware.
 
 Verify on a real host:
 
