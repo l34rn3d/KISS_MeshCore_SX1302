@@ -11,8 +11,18 @@ Current repo:
 Last verified state:
 
 ```text
-30 tests passing
+33 tests passing
 ```
+
+## Recently completed: CRC-aware RX metadata and packaging docs
+
+Implemented in this pass:
+
+- `pyMC_core` now exposes `SX1302Radio.wait_for_rx_packet()` for RX metadata events, including CRC failures.
+- Good CRC packets still feed the legacy `wait_for_rx()` payload queue.
+- Bad CRC packets are exposed to metadata consumers but not forwarded through the legacy payload queue.
+- `sx1302-meshcore-kiss` now consumes `wait_for_rx_packet()` when available and preserves frequency, bandwidth, SF, CR, RSSI, SNR, channel, timestamp, and `crc_ok` in `RxPacket`.
+- Added Python packaging metadata and install/service documentation in `docs/install.md`.
 
 ## Recently completed: MeshCore SetHardware `0x06` protocol alignment
 
@@ -89,24 +99,14 @@ Acceptance:
 - outgoing pyMC packets become daemon TX requests
 - daemon RX frames are received by pyMC
 
-## 3. Improve RX CRC metadata handling
+## 3. Hardware-prove RX CRC metadata handling
 
-Current adapter assumes anything returned by `SX1302Radio.wait_for_rx()` is CRC-good:
+Software support is now in place:
 
-```python
-payload = await self.radio.wait_for_rx()
-crc_ok = True
-```
+- `pyMC_core` has a metadata receive queue that can expose `crc_ok=True`, `crc_ok=False`, or `crc_ok=None`.
+- the daemon converts that metadata into `RxPacket` and applies the existing forwarding/drop policy.
 
-That may be acceptable if `pyMC_core` only returns valid packets, but it means the daemon cannot currently report real RF CRC failures unless the lower SX1302 layer exposes them.
-
-Need to investigate or add a lower-level receive path that can produce:
-
-```python
-RxPacket(crc_ok=True)
-RxPacket(crc_ok=False)
-RxPacket(crc_ok=None)
-```
+Still needs real RF/hardware proof that the SX1302 HAL path actually surfaces bad CRC packets with enough metadata on the target hardware.
 
 Acceptance:
 

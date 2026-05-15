@@ -42,6 +42,7 @@ Initial implementation/prototype. The pure daemon behavior is covered by tests; 
 - PTY endpoint with default symlink `/tmp/sx1302-kiss`.
 - Serial endpoint for real tty devices.
 - SX1302 adapter around `pymc_core.hardware.sx1302_wrapper.SX1302Radio`.
+- CRC-aware SX1302 receive metadata path when the local `pyMC_core` exposes `wait_for_rx_packet()`.
 - CRC policy:
   - `crc_ok=True`: forward to pyMC, MQTT `rx/good`, dashboard event.
   - `crc_ok=False`: drop from pyMC, MQTT `rx/bad_crc`, dashboard event.
@@ -57,6 +58,8 @@ Initial implementation/prototype. The pure daemon behavior is covered by tests; 
 - Basic systemd unit example.
 
 ## Install / run from source
+
+Full install/service notes are in [`docs/install.md`](docs/install.md). Quick source run:
 
 ```bash
 cd /home/chris/mesh2/sx1302-meshcore-kiss
@@ -93,7 +96,7 @@ PYTHONPATH=src:/home/chris/mesh2/pyMC_core/src pytest -q
 Current expected result:
 
 ```text
-30 passed
+33 passed
 ```
 
 ## Development roadmap
