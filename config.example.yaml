@@ -10,7 +10,7 @@ kiss:
 
 radio:
   frequency_hz: 915000000
-  bandwidth_hz: 125000        # 62500 experimental trick mode is supported by pyMC_core SX1302Radio
+  bandwidth_hz: 125000        # 62500 experimental trick mode is supported by the daemon SX1302 backend
   spreading_factor: 8
   coding_rate: 5
   tx_power_dbm: 14

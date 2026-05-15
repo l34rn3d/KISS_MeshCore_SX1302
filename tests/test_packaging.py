@@ -10,7 +10,10 @@ def test_pyproject_has_installable_metadata_and_runtime_dependencies():
     assert "README.md" == project["readme"]
     assert project["license"]["text"] == "MIT"
     assert "sx1302-meshcore-kiss" in project["scripts"]
-    assert any(dep.startswith("pymc-core") for dep in project["optional-dependencies"]["runtime"])
+    deps = project["dependencies"]
+    assert any(dep.startswith("spidev") for dep in deps)
+    assert any(dep.startswith("python-periphery") for dep in deps)
+    assert "runtime" not in project.get("optional-dependencies", {})
 
 
 def test_install_docs_cover_uv_systemd_and_hardware_permissions():

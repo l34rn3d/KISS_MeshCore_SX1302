@@ -11,11 +11,7 @@ uv venv .venv
 uv pip install -e '.[dev]'
 ```
 
-The daemon currently uses the local `pyMC_core` SX1302 library. If editable install resolution is not desired on the target, run with an explicit `PYTHONPATH`:
-
-```bash
-PYTHONPATH=src:/home/chris/mesh2/pyMC_core/src sx1302-meshcore-kiss --config config.example.yaml
-```
+The daemon contains its own SX1302/WM1302 SPI/GPIO backend. Vanilla pyMC/pyMC_Repeater should talk to it only through the KISS PTY/serial interface.
 
 ## 2. Create system config
 
@@ -50,7 +46,7 @@ or a board-specific udev/systemd policy that grants access to:
 - `/dev/spidev*`
 - `/dev/gpiochip*`
 
-If GPIO reset uses the current `gpioset` path from `pyMC_core`, ensure the `gpiod` tools are installed and usable by the service user.
+The daemon reset path currently shells out to `gpioset`; ensure the `gpiod` tools are installed and usable by the service user.
 
 ## 4. Install systemd service
 

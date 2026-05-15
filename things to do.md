@@ -14,6 +14,15 @@ Last verified state:
 33 tests passing
 ```
 
+## Recently completed: standalone SX1302 KISS daemon
+
+Implemented:
+
+- Ported the SX1302/WM1302 SPI/GPIO HAL into the daemon under `sx1302_meshcore_kiss.sx1302`.
+- Default adapter now uses daemon-local `SX1302Radio`, not `pymc_core.hardware.sx1302_wrapper`.
+- `pyMC_core`/pyMC_Repeater are KISS peers only; vanilla pyMC can run unchanged.
+- Packaging runtime dependencies now include the hardware dependencies directly.
+
 ## Recently corrected: daemon-only CRC/packaging work
 
 Correction after review:
@@ -107,7 +116,7 @@ Acceptance:
 - `RxMeta 0xF9` and `TxDone 0xF8` travel as MeshCore `SetHardware 0x06` frames.
 - Bad/unknown CRC packets, when an SX1302-facing daemon path can surface them, should be MQTT/dashboard telemetry only and must not be sent as KISS `Data 0x00`.
 
-Still needed: prove whether the current SX1302 receive source can surface bad CRC packets without modifying `pyMC_core`; if not, leave bad-CRC reporting as unsupported until a daemon-local hardware path exists.
+Still needed: prove whether the daemon-local SX1302 receive path can surface bad CRC packets from real hardware; if not, keep bad-CRC RF reporting marked unsupported while still enforcing the service-level CRC policy for any `RxPacket(crc_ok=False)` values.
 
 Acceptance:
 
@@ -355,5 +364,5 @@ Acceptance:
 2. MQTT real connection tracking and publish error counters.
 3. Fake end-to-end PTY integration test with fake SX1302 adapter.
 4. Process uptime and better dashboard status.
-5. Investigate/extend `pyMC_core` SX1302 receive metadata so bad CRC packets can be reported instead of assuming all received packets are good.
+5. Hardware-prove the daemon-local SX1302 receive metadata path so bad CRC packets can be reported instead of assuming all received packets are good.
 6. Real WM1302/SX1302 hardware validation.

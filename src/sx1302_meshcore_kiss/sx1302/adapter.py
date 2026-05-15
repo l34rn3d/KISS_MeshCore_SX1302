@@ -13,7 +13,7 @@ def _now_iso() -> str:
 class SX1302Adapter:
     def __init__(self, radio_factory: Optional[Callable[..., Any]] = None) -> None:
         if radio_factory is None:
-            from pymc_core.hardware.sx1302_wrapper import SX1302Radio
+            from sx1302_meshcore_kiss.sx1302.radio import SX1302Radio
             radio_factory = SX1302Radio
         self.radio_factory = radio_factory
         self.config = RadioConfig()

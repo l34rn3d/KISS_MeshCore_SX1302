@@ -1,6 +1,6 @@
 # sx1302-meshcore-kiss
 
-MeshCore-compatible KISS modem daemon for using an SX1302/WM1302 concentrator through the Python `pyMC_core` SX1302 library.
+MeshCore-compatible standalone KISS modem daemon for using an SX1302/WM1302 concentrator with vanilla pyMC/pyMC_Repeater over KISS.
 
 ```text
 pyMC_Repeater / pyMC_core
@@ -9,7 +9,7 @@ KISS serial / PTY interface
         ⇅
 sx1302-meshcore-kiss daemon
         ⇅
-pyMC_core SX1302Radio adapter
+daemon-local SX1302/WM1302 SPI/GPIO backend
         ⇅
 SX1302 / WM1302 concentrator hardware
 ```
@@ -41,7 +41,7 @@ Initial implementation/prototype. The pure daemon behavior is covered by tests; 
 - Unsupported crypto/device/sensor SetHardware requests return MeshCore error responses instead of being treated as raw KISS commands.
 - PTY endpoint with default symlink `/tmp/sx1302-kiss`.
 - Serial endpoint for real tty devices.
-- SX1302 adapter around `pymc_core.hardware.sx1302_wrapper.SX1302Radio`.
+- Standalone SX1302 adapter around daemon-local `sx1302_meshcore_kiss.sx1302.radio.SX1302Radio`; vanilla pyMC is only a KISS peer.
 - CRC policy inside the KISS daemon/service boundary:
   - `crc_ok=True`: forward to pyMC, MQTT `rx/good`, dashboard event.
   - `crc_ok=False`: drop from pyMC, MQTT `rx/bad_crc`, dashboard event.
@@ -63,7 +63,7 @@ Full install/service notes are in [`docs/install.md`](docs/install.md). Quick so
 
 ```bash
 cd /home/chris/mesh2/sx1302-meshcore-kiss
-PYTHONPATH=src:/home/chris/mesh2/pyMC_core/src python -m sx1302_meshcore_kiss.main --config config.example.yaml
+PYTHONPATH=src python -m sx1302_meshcore_kiss.main --config config.example.yaml
 ```
 
 For pyMC_Repeater on the same host, point its KISS radio config at the PTY symlink:
@@ -90,7 +90,7 @@ The daemon owns SX1302 radio configuration. Match daemon-side radio settings to 
 
 ```bash
 cd /home/chris/mesh2/sx1302-meshcore-kiss
-PYTHONPATH=src:/home/chris/mesh2/pyMC_core/src pytest -q
+PYTHONPATH=src pytest -q
 ```
 
 Current expected result:

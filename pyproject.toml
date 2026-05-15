@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "sx1302-meshcore-kiss"
 version = "0.1.0"
-description = "MeshCore-compatible KISS modem daemon for SX1302/WM1302 concentrators"
+description = "Standalone MeshCore-compatible KISS modem daemon for SX1302/WM1302 concentrators"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
@@ -21,12 +21,12 @@ dependencies = [
   "paho-mqtt>=2.0",
   "pyserial>=3.5",
   "PyYAML>=6.0",
+  "spidev>=3.5",
+  "python-periphery>=2.4.1",
+  "pyusb>=1.2.1",
 ]
 
 [project.optional-dependencies]
-runtime = [
-  "pymc-core @ file:///home/chris/mesh2/pyMC_core",
-]
 dev = [
   "pytest>=8.0",
   "pytest-asyncio>=0.23",
@@ -39,5 +39,5 @@ sx1302-meshcore-kiss = "sx1302_meshcore_kiss.main:main"
 where = ["src"]
 
 [tool.pytest.ini_options]
-pythonpath = ["src", "/home/chris/mesh2/pyMC_core/src"]
+pythonpath = ["src"]
 asyncio_mode = "auto"
