@@ -1,0 +1,62 @@
+node_id: "repeater-01"
+
+kiss:
+  mode: "pty"                 # pty | serial
+  symlink: "/tmp/sx1302-kiss"
+  serial_port: "/dev/ttyUSB0"
+  baud_rate: 115200
+  tcp_bind: "127.0.0.1"
+  tcp_port: 8001
+
+radio:
+  frequency_hz: 915000000
+  bandwidth_hz: 125000        # 62500 experimental trick mode is supported by pyMC_core SX1302Radio
+  spreading_factor: 8
+  coding_rate: 5
+  tx_power_dbm: 14
+  preamble_len: 17
+  sync_word: null
+  implicit_header: false
+  invert_iq: false
+  spi_device: "/dev/spidev0.0"
+  sx1261_spi_path: null
+  reset_enabled: true
+  reset_required: false
+  gpio_chip: "gpiochip0"
+  power_enable_pin: 18
+  sx1302_reset_pin: 17
+  sx1261_reset_pin: 5
+  adc_reset_pin: 13
+  duty_cycle_enforcement: "raise"
+
+crc:
+  forward_unknown_crc: false
+  publish_bad_crc_payload: true
+  dashboard_show_bad_crc_payload: true
+
+mqtt:
+  enabled: true
+  host: "127.0.0.1"
+  port: 1883
+  username: ""
+  password: ""
+  client_id: "sx1302-meshcore-kiss-repeater-01"
+  base_topic: "meshcore/sx1302/repeater-01"
+  qos_events: 0
+  qos_status: 1
+  retain_status: true
+  retain_packet_events: false
+
+status:
+  publish_interval_seconds: 30
+  counters_interval_seconds: 30
+
+dashboard:
+  enabled: true
+  bind_host: "127.0.0.1"
+  port: 8080
+  max_packet_events: 50
+
+logging:
+  level: "INFO"
+  log_raw_payloads: false

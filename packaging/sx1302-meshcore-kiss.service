@@ -1,0 +1,17 @@
+[Unit]
+Description=SX1302 MeshCore KISS Modem
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sx1302kiss
+Group=sx1302kiss
+WorkingDirectory=/opt/sx1302-meshcore-kiss
+ExecStart=/opt/sx1302-meshcore-kiss/.venv/bin/python -m sx1302_meshcore_kiss --config /etc/sx1302-meshcore-kiss/config.yaml
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
