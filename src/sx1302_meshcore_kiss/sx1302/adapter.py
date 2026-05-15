@@ -18,8 +18,10 @@ class SX1302Adapter:
         self.radio_factory = radio_factory
         self.config = RadioConfig()
         self.radio: Any = None
+        self._started = False
 
     async def configure(self, config: RadioConfig) -> None:
+        old_radio = self.radio
         self.config = config
         self.radio = self.radio_factory(
             frequency=config.frequency_hz,
@@ -40,15 +42,22 @@ class SX1302Adapter:
             adc_reset_pin=config.adc_reset_pin,
             duty_cycle_enforcement=config.duty_cycle_enforcement,
         )
+        if old_radio is not None and old_radio is not self.radio and hasattr(old_radio, "cleanup"):
+            old_radio.cleanup()
+        if self._started:
+            self.radio.begin()
 
     async def start(self) -> None:
         if self.radio is None:
             await self.configure(self.config)
-        self.radio.begin()
+        if not self._started:
+            self.radio.begin()
+            self._started = True
 
     async def stop(self) -> None:
         if self.radio is not None and hasattr(self.radio, "cleanup"):
             self.radio.cleanup()
+        self._started = False
 
     async def transmit(self, packet: TxPacket) -> TxResult:
         if self.radio is None:
