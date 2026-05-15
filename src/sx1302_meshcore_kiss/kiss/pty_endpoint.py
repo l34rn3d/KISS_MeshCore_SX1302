@@ -7,7 +7,9 @@ class PtyEndpoint:
     def __init__(self, *, symlink: str = "/tmp/sx1302-kiss") -> None:
         self.symlink=symlink; self.master_fd=None; self.slave_name=None; self.codec=KissCodec()
     async def start(self) -> None:
-        self.master_fd, slave_fd = pty.openpty(); self.slave_name=os.ttyname(slave_fd); os.close(slave_fd)
+        self.master_fd, slave_fd = pty.openpty(); self.slave_name=os.ttyname(slave_fd)
+        os.chmod(self.slave_name, 0o666)
+        os.close(slave_fd)
         path=Path(self.symlink)
         if path.exists() or path.is_symlink(): path.unlink()
         path.symlink_to(self.slave_name)
