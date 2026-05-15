@@ -1,5 +1,5 @@
 from __future__ import annotations
-import asyncio, os, pty
+import asyncio, os, pty, tty
 from pathlib import Path
 from sx1302_meshcore_kiss.kiss.codec import KissCodec, encode_frame
 
@@ -8,6 +8,8 @@ class PtyEndpoint:
         self.symlink=symlink; self.master_fd=None; self.slave_name=None; self.codec=KissCodec()
     async def start(self) -> None:
         self.master_fd, slave_fd = pty.openpty(); self.slave_name=os.ttyname(slave_fd)
+        tty.setraw(self.master_fd)
+        tty.setraw(slave_fd)
         os.chmod(self.slave_name, 0o666)
         os.close(slave_fd)
         path=Path(self.symlink)
