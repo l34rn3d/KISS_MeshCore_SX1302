@@ -164,31 +164,14 @@ Acceptance:
 - MQTT reconnect is reflected in dashboard/status
 - failed publishes increment counters instead of crashing the daemon
 
-## 6. Improve dashboard UI
+## Recently completed: browser dashboard UI
 
-Current dashboard APIs work, but `/` is only a simple placeholder page.
+Implemented:
 
-Need a human-friendly local dashboard showing:
-
-- daemon status
-- SX1302 status
-- MQTT status
-- KISS endpoint status
-- active radio config
-- counters
-- latest 50 packet events only
-- direction RX/TX
-- status: good, bad_crc, unknown_crc, tx_done, tx_error, kiss_error
-- RSSI/SNR/channel/frequency/SF/BW/CR where available
-- payload length
-- payload hex
-- timestamp
-
-Acceptance:
-
-- `/` is usable in a browser without needing API calls
-- dashboard never shows more than the latest 50 packet events
-- restart clears packet event history
+- `/` now serves a live browser dashboard instead of a placeholder.
+- Shows Radio, MQTT, KISS, counters, active redacted config, and latest packet events.
+- Refreshes `/api/status`, `/api/counters`, `/api/packets`, and `/api/config` every 2 seconds.
+- Keeps packet history in the existing RAM-only ring buffer; no persistent packet storage added.
 
 ## 7. Track real uptime
 

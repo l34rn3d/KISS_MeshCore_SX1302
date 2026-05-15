@@ -47,7 +47,8 @@ Initial implementation/prototype. The pure daemon behavior is covered by tests; 
   - `crc_ok=False`: drop from pyMC, MQTT `rx/bad_crc`, dashboard event.
   - `crc_ok=None`: drop by default, optional lab-only forwarding.
 - MQTT JSON telemetry schemas with payload hex and base64.
-- Local-only HTTP dashboard APIs:
+- Local-only HTTP dashboard with browser UI and APIs:
+  - `/` live dashboard page
   - `/api/status`
   - `/api/counters`
   - `/api/packets`
@@ -106,4 +107,4 @@ Next practical hardening steps:
 2. Verify pyMC_Repeater opens `/tmp/sx1302-kiss` and can exchange KISS frames.
 3. Add end-to-end integration test with a fake pyMC KISS client and fake SX1302 adapter.
 4. Add optional TCP KISS endpoint if needed.
-5. Add richer dashboard HTML once hardware behavior is proven.
+5. Improve periodic MQTT/status publishing and real connection tracking.
