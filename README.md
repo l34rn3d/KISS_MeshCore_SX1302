@@ -62,7 +62,7 @@ Initial implementation/prototype. The pure daemon behavior is covered by tests; 
 Full install/service notes are in [`docs/install.md`](docs/install.md). Quick source run:
 
 ```bash
-cd /home/chris/mesh2/sx1302-meshcore-kiss
+cd sx1302-meshcore-kiss
 PYTHONPATH=src python -m sx1302_meshcore_kiss.main --config config.example.yaml
 ```
 
@@ -89,7 +89,7 @@ The daemon owns SX1302 radio configuration. Match daemon-side radio settings to 
 ## Test
 
 ```bash
-cd /home/chris/mesh2/sx1302-meshcore-kiss
+cd sx1302-meshcore-kiss
 PYTHONPATH=src pytest -q
 ```
 

@@ -5,7 +5,7 @@ This is a source-install guide for the local SX1302 MeshCore KISS daemon.
 ## 1. Create a virtual environment
 
 ```bash
-cd /home/chris/mesh2/sx1302-meshcore-kiss
+cd sx1302-meshcore-kiss
 uv venv .venv
 . .venv/bin/activate
 uv pip install -e '.[dev]'
@@ -58,7 +58,7 @@ sudo systemctl start sx1302-meshcore-kiss.service
 sudo systemctl status sx1302-meshcore-kiss.service
 ```
 
-The example unit expects the repo at `/home/chris/mesh2/sx1302-meshcore-kiss` and config at `/etc/sx1302-meshcore-kiss/config.yaml`; edit the unit if installed elsewhere.
+The example unit expects the repo at the path configured in `packaging/sx1302-meshcore-kiss.service` and config at `/etc/sx1302-meshcore-kiss/config.yaml`; edit the unit if installed elsewhere.
 
 ## 5. Configure pyMC_Repeater
 

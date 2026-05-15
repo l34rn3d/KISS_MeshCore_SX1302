@@ -5,7 +5,7 @@ Outstanding work for `sx1302-meshcore-kiss` after the initial daemon implementat
 Current repo:
 
 ```text
-/home/chris/mesh2/sx1302-meshcore-kiss
+sx1302-meshcore-kiss
 ```
 
 Last verified state:
