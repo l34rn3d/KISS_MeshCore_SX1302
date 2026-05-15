@@ -27,8 +27,18 @@ Initial implementation/prototype. The pure daemon behavior is covered by tests; 
 - 1..255 byte MeshCore payload length enforcement.
 - No KISS-level CRC/FCS.
 - Payload bytes are passed through unchanged.
-- `RxMeta 0xF9` emission after valid RX frames when RSSI/SNR exist.
-- `TxDone 0xF8` emission after TX attempts.
+- MeshCore `SetHardware 0x06` extension frames for radio config/status requests.
+- `RxMeta 0xF9` and `TxDone 0xF8` are emitted as MeshCore SetHardware events:
+  - `0x06 0xF9 <snr_i8_x4> <rssi_i8>`
+  - `0x06 0xF8 <result>`
+- Supported SetHardware requests:
+  - `SetRadio 0x09`, `SetTxPower 0x0A`
+  - `GetRadio 0x0B`, `GetTxPower 0x0C`
+  - `GetCurrentRssi 0x0D`, `IsChannelBusy 0x0E`
+  - `GetAirtime 0x0F`, `GetNoiseFloor 0x10`
+  - `GetVersion 0x11`, `GetStats 0x12`
+  - `SetSignalReport 0x19`, `GetSignalReport 0x1A`
+- Unsupported crypto/device/sensor SetHardware requests return MeshCore error responses instead of being treated as raw KISS commands.
 - PTY endpoint with default symlink `/tmp/sx1302-kiss`.
 - Serial endpoint for real tty devices.
 - SX1302 adapter around `pymc_core.hardware.sx1302_wrapper.SX1302Radio`.
@@ -83,7 +93,7 @@ PYTHONPATH=src:/home/chris/mesh2/pyMC_core/src pytest -q
 Current expected result:
 
 ```text
-22 passed
+30 passed
 ```
 
 ## Development roadmap

@@ -7,7 +7,9 @@ from sx1302_meshcore_kiss.kiss.codec import (
     TFESC,
     CMD_DATA,
     CMD_RXMETA,
-    CMD_TXDONE,
+    KISS_CMD_SETHARDWARE,
+    MESHCORE_SUB_RXMETA,
+    MESHCORE_SUB_TXDONE,
     KissCodec,
     KissDecodeError,
     encode_frame,
@@ -48,14 +50,22 @@ def test_stream_decoder_masks_standard_kiss_port_nibble_for_data_frames():
     assert frame.payload == b"\x01\x02"
 
 
-def test_stream_decoder_preserves_meshcore_extension_command_bytes():
+def test_stream_decoder_decodes_sethardware_command_with_port_nibble():
     codec = KissCodec()
-    frame = codec.feed(bytes([FEND, CMD_RXMETA, 25, 0x9F, FEND]))[0]
+    frame = codec.feed(bytes([FEND, 0x16, MESHCORE_SUB_GET_RADIO := 0x0B, FEND]))[0]
 
-    assert frame.command == CMD_RXMETA
-    assert frame.port == 0
-    assert frame.raw_command == CMD_RXMETA
-    assert frame.payload == bytes([25, 0x9F])
+    assert frame.command == KISS_CMD_SETHARDWARE
+    assert frame.port == 1
+    assert frame.raw_command == 0x16
+    assert frame.payload == bytes([MESHCORE_SUB_GET_RADIO])
+
+
+def test_meshcore_rxmeta_and_txdone_encode_as_sethardware_frames():
+    assert encode_rxmeta(rssi_dbm=-97.5, snr_db=6.25) == bytes(
+        [FEND, KISS_CMD_SETHARDWARE, MESHCORE_SUB_RXMETA, 25, 0x9E, FEND]
+    )
+    assert encode_txdone(ok=True) == bytes([FEND, KISS_CMD_SETHARDWARE, MESHCORE_SUB_TXDONE, 1, FEND])
+    assert encode_txdone(ok=False) == bytes([FEND, KISS_CMD_SETHARDWARE, MESHCORE_SUB_TXDONE, 0, FEND])
 
 
 def test_stream_decoder_reports_invalid_escape_and_drops_frame():
@@ -76,8 +86,8 @@ def test_data_payload_length_limit_is_enforced():
         encode_frame(CMD_DATA, b"")
 
 
-def test_rxmeta_and_txdone_sethardware_frames():
-    assert encode_rxmeta(rssi_dbm=-97.2, snr_db=6.25) == encode_frame(CMD_RXMETA, bytes([25, 0x9F]))
-    assert encode_rxmeta(rssi_dbm=-200, snr_db=-40) == encode_frame(CMD_RXMETA, bytes([0x80, 0x80]))
-    assert encode_txdone(ok=True) == encode_frame(CMD_TXDONE, b"\x01")
-    assert encode_txdone(ok=False) == encode_frame(CMD_TXDONE, b"\x00")
+def test_rxmeta_and_txdone_sethardware_frames_clamp_values():
+    assert encode_rxmeta(rssi_dbm=-97.2, snr_db=6.25) == encode_frame(KISS_CMD_SETHARDWARE, bytes([MESHCORE_SUB_RXMETA, 25, 0x9F]))
+    assert encode_rxmeta(rssi_dbm=-200, snr_db=-40) == encode_frame(KISS_CMD_SETHARDWARE, bytes([MESHCORE_SUB_RXMETA, 0x80, 0x80]))
+    assert encode_txdone(ok=True) == encode_frame(KISS_CMD_SETHARDWARE, bytes([MESHCORE_SUB_TXDONE, 0x01]))
+    assert encode_txdone(ok=False) == encode_frame(KISS_CMD_SETHARDWARE, bytes([MESHCORE_SUB_TXDONE, 0x00]))

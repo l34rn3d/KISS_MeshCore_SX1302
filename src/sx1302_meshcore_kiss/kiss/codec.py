@@ -13,9 +13,44 @@ KISS_CMD_PERSIST = 0x02
 KISS_CMD_SLOTTIME = 0x03
 KISS_CMD_TXTAIL = 0x04
 KISS_CMD_FULLDUP = 0x05
+KISS_CMD_SETHARDWARE = 0x06
 KISS_CMD_RETURN = 0xFF
-CMD_TXDONE = 0xF8
-CMD_RXMETA = 0xF9
+
+MESHCORE_SUB_GET_IDENTITY = 0x01
+MESHCORE_SUB_GET_RANDOM = 0x02
+MESHCORE_SUB_VERIFY_SIGNATURE = 0x03
+MESHCORE_SUB_SIGN_DATA = 0x04
+MESHCORE_SUB_ENCRYPT_DATA = 0x05
+MESHCORE_SUB_DECRYPT_DATA = 0x06
+MESHCORE_SUB_KEY_EXCHANGE = 0x07
+MESHCORE_SUB_HASH = 0x08
+MESHCORE_SUB_SET_RADIO = 0x09
+MESHCORE_SUB_SET_TX_POWER = 0x0A
+MESHCORE_SUB_GET_RADIO = 0x0B
+MESHCORE_SUB_GET_TX_POWER = 0x0C
+MESHCORE_SUB_GET_CURRENT_RSSI = 0x0D
+MESHCORE_SUB_IS_CHANNEL_BUSY = 0x0E
+MESHCORE_SUB_GET_AIRTIME = 0x0F
+MESHCORE_SUB_GET_NOISE_FLOOR = 0x10
+MESHCORE_SUB_GET_VERSION = 0x11
+MESHCORE_SUB_GET_STATS = 0x12
+MESHCORE_SUB_SET_SIGNAL_REPORT = 0x19
+MESHCORE_SUB_GET_SIGNAL_REPORT = 0x1A
+MESHCORE_SUB_OK = 0xF0
+MESHCORE_SUB_ERROR = 0xF1
+MESHCORE_SUB_TXDONE = 0xF8
+MESHCORE_SUB_RXMETA = 0xF9
+
+# Backwards-compatible aliases for callers that imported the old names. These
+# are MeshCore SetHardware sub-command values, not top-level KISS commands.
+CMD_TXDONE = MESHCORE_SUB_TXDONE
+CMD_RXMETA = MESHCORE_SUB_RXMETA
+
+MESHCORE_ERROR_INVALID_LENGTH = 0x01
+MESHCORE_ERROR_INVALID_PARAM = 0x02
+MESHCORE_ERROR_NO_CALLBACK = 0x03
+MESHCORE_ERROR_UNKNOWN_CMD = 0x05
+
 MAX_MESHCORE_PAYLOAD = 255
 _STANDARD_KISS_COMMANDS = {
     CMD_DATA,
@@ -24,6 +59,7 @@ _STANDARD_KISS_COMMANDS = {
     KISS_CMD_SLOTTIME,
     KISS_CMD_TXTAIL,
     KISS_CMD_FULLDUP,
+    KISS_CMD_SETHARDWARE,
 }
 
 
@@ -74,11 +110,11 @@ def _clamp_i8(value: int) -> int:
 def encode_rxmeta(*, rssi_dbm: float, snr_db: float) -> bytes:
     snr_i8_x4 = _clamp_i8(round(float(snr_db) * 4.0)) & 0xFF
     rssi_i8 = _clamp_i8(round(float(rssi_dbm))) & 0xFF
-    return encode_frame(CMD_RXMETA, bytes([snr_i8_x4, rssi_i8]))
+    return encode_frame(KISS_CMD_SETHARDWARE, bytes([MESHCORE_SUB_RXMETA, snr_i8_x4, rssi_i8]))
 
 
 def encode_txdone(*, ok: bool = True) -> bytes:
-    return encode_frame(CMD_TXDONE, b"\x01" if ok else b"\x00")
+    return encode_frame(KISS_CMD_SETHARDWARE, bytes([MESHCORE_SUB_TXDONE, 0x01 if ok else 0x00]))
 
 
 class KissCodec:
@@ -120,7 +156,7 @@ class KissCodec:
 
     @staticmethod
     def _normalize_command(raw_command: int) -> tuple[int, int]:
-        if raw_command in (CMD_RXMETA, CMD_TXDONE, KISS_CMD_RETURN):
+        if raw_command == KISS_CMD_RETURN:
             return raw_command, 0
         low_command = raw_command & 0x0F
         if low_command in _STANDARD_KISS_COMMANDS:

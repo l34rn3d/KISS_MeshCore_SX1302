@@ -11,53 +11,39 @@ Current repo:
 Last verified state:
 
 ```text
-25 tests passing
+30 tests passing
 ```
 
-## 1. Align MeshCore SetHardware `0x06` protocol handling
+## Recently completed: MeshCore SetHardware `0x06` protocol alignment
 
-The later `kiss_modem_protocol.md` reference clarifies that MeshCore extensions use standard KISS `SetHardware 0x06`; the first payload byte is the MeshCore sub-command.
+Implemented from `kiss_modem_protocol.md`:
 
-Current daemon partially predates that clarification and currently emits these as direct KISS command/type bytes:
+- `TxDone 0xF8` and `RxMeta 0xF9` now emit as MeshCore `SetHardware 0x06` frames.
+- Standard KISS data frames remain unchanged.
+- Standard KISS clients can ignore SetHardware frames safely.
+- Supported SetHardware requests now return little-endian responses:
+  - `0x09 SetRadio`
+  - `0x0A SetTxPower`
+  - `0x0B GetRadio`
+  - `0x0C GetTxPower`
+  - `0x0D GetCurrentRssi`
+  - `0x0E IsChannelBusy`
+  - `0x0F GetAirtime`
+  - `0x10 GetNoiseFloor`
+  - `0x11 GetVersion`
+  - `0x12 GetStats`
+  - `0x19 SetSignalReport`
+  - `0x1A GetSignalReport`
+- Unsupported crypto/device/sensor requests return MeshCore error responses instead of being treated as unknown KISS commands.
 
-```text
-0xF8 TxDone
-0xF9 RxMeta
-```
+Remaining limitations in this area:
 
-Correct protocol shape from `kiss_modem_protocol.md` is:
+- `GetAirtime` is currently a placeholder response.
+- `IsChannelBusy` currently reports clear unless deeper hardware LBT/channel activity support is added.
+- `GetNoiseFloor` currently returns a placeholder noise floor until SX1261/SX1302-backed noise-floor measurement is implemented.
+- Crypto/identity/sensors/reboot are not implemented and return unsupported/no-callback style errors.
 
-```text
-FEND 0x06 0xF8 <result> FEND   # TxDone SetHardware event
-FEND 0x06 0xF9 <snr_x4> <rssi> FEND   # RxMeta SetHardware event
-```
-
-Also missing/partial SetHardware request handling:
-
-- `0x06 0x09 SetRadio`
-- `0x06 0x0A SetTxPower`
-- `0x06 0x0B GetRadio`
-- `0x06 0x0C GetTxPower`
-- `0x06 0x0D GetCurrentRssi`
-- `0x06 0x0E IsChannelBusy`
-- `0x06 0x0F GetAirtime`
-- `0x06 0x10 GetNoiseFloor`
-- `0x06 0x11 GetVersion`
-- `0x06 0x12 GetStats`
-- `0x06 0x19 SetSignalReport`
-- `0x06 0x1A GetSignalReport`
-
-Crypto/device identity/sensors commands can initially return `Error NoCallback` where unsupported.
-
-Acceptance:
-
-- `TxDone` and `RxMeta` are encoded as SetHardware frames, not direct type bytes
-- standard KISS data frames remain unchanged
-- standard KISS clients still ignore SetHardware frames safely
-- supported SetHardware queries return correct little-endian responses
-- unsupported SetHardware subcommands return `Error 0xF1` with a useful error code
-
-## 2. Real WM1302/SX1302 hardware validation
+## 1. Real WM1302/SX1302 hardware validation
 
 This is the biggest hardware gap. The code is unit-tested, but not yet proven on real concentrator hardware.
 
