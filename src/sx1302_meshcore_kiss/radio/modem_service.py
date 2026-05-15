@@ -1,19 +1,42 @@
 from __future__ import annotations
 from typing import Any, Optional
-from sx1302_meshcore_kiss.kiss.codec import CMD_DATA, CMD_RXMETA, CMD_TXDONE, KissFrame
+from sx1302_meshcore_kiss.kiss.codec import (
+    CMD_DATA,
+    CMD_RXMETA,
+    CMD_TXDONE,
+    KISS_CMD_FULLDUP,
+    KISS_CMD_PERSIST,
+    KISS_CMD_RETURN,
+    KISS_CMD_SLOTTIME,
+    KISS_CMD_TXDELAY,
+    KISS_CMD_TXTAIL,
+    KissFrame,
+)
 from sx1302_meshcore_kiss.mqtt.schemas import build_rx_event, build_tx_requested_event, build_tx_result_event
 from sx1302_meshcore_kiss.sx1302.metadata import RadioConfig, RxPacket, TxPacket
 from sx1302_meshcore_kiss.telemetry.counters import Counters
 from sx1302_meshcore_kiss.telemetry.ring_buffer import PacketRingBuffer
 
 class ModemService:
+    _CONFIG_COMMAND_NAMES = {
+        KISS_CMD_TXDELAY: "txdelay",
+        KISS_CMD_PERSIST: "persist",
+        KISS_CMD_SLOTTIME: "slottime",
+        KISS_CMD_TXTAIL: "txtail",
+        KISS_CMD_FULLDUP: "fulldup",
+        KISS_CMD_RETURN: "return",
+    }
+
     def __init__(self, *, node_id: str, radio_config: RadioConfig, sx1302: Any, kiss: Any, mqtt: Any, ring: PacketRingBuffer, counters: Counters, forward_unknown_crc: bool = False, emit_rxmeta: bool = True, emit_txdone: bool = True) -> None:
         self.node_id=node_id; self.radio_config=radio_config; self.sx1302=sx1302; self.kiss=kiss; self.mqtt=mqtt; self.ring=ring; self.counters=counters; self.forward_unknown_crc=forward_unknown_crc; self.emit_rxmeta=emit_rxmeta; self.emit_txdone=emit_txdone
+        self.kiss_config: dict[str, int | bool | None] = {}
 
     def _tx_packet(self, payload: bytes) -> TxPacket:
         return TxPacket(payload=bytes(payload), frequency_hz=self.radio_config.frequency_hz, bandwidth_hz=self.radio_config.bandwidth_hz, spreading_factor=self.radio_config.spreading_factor, coding_rate=self.radio_config.coding_rate, tx_power_dbm=self.radio_config.tx_power_dbm, preamble_len=self.radio_config.preamble_len, sync_word=self.radio_config.sync_word, invert_iq=self.radio_config.invert_iq)
 
     async def handle_kiss_frame(self, frame: KissFrame) -> bool:
+        if frame.command in self._CONFIG_COMMAND_NAMES:
+            return await self._handle_config_command(frame)
         if frame.command != CMD_DATA:
             self.counters.kiss_unknown_command_count += 1
             await self.mqtt.publish_event("kiss/error", {"status":"unknown_command", "command": frame.command})
@@ -44,6 +67,24 @@ class ModemService:
         if self.emit_txdone:
             await self.kiss.write_frame(CMD_TXDONE, b"\x01" if result.ok else b"\x00")
         return result.ok
+
+    async def _handle_config_command(self, frame: KissFrame) -> bool:
+        name = self._CONFIG_COMMAND_NAMES[frame.command]
+        value: int | bool | None = frame.payload[0] if frame.payload else None
+        if frame.command == KISS_CMD_FULLDUP and value is not None:
+            value = bool(value)
+        self.kiss_config[name] = value
+        event = {
+            "direction": "kiss",
+            "status": "kiss_config",
+            "command": frame.command,
+            "command_name": name,
+            "port": frame.port,
+            "value": value,
+        }
+        self.ring.add(event)
+        await self.mqtt.publish_event("kiss/config", event)
+        return True
 
     async def handle_rx_packet(self, pkt: RxPacket) -> bool:
         if pkt.crc_ok is True:

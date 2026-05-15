@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 
-from sx1302_meshcore_kiss.kiss.codec import CMD_DATA, CMD_RXMETA, KissFrame, encode_frame
+from sx1302_meshcore_kiss.kiss.codec import CMD_DATA, CMD_RXMETA, KISS_CMD_TXDELAY, KissFrame, encode_frame
 from sx1302_meshcore_kiss.radio.modem_service import ModemService
 from sx1302_meshcore_kiss.sx1302.metadata import RadioConfig, RxPacket, TxResult
 from sx1302_meshcore_kiss.telemetry.counters import Counters
@@ -77,6 +77,16 @@ async def test_tx_rejects_payloads_over_255_before_sx1302(service):
     assert service.sx1302.transmitted == []
     assert service.counters.tx_error_count == 1
     assert service.mqtt.published[-1][0] == "tx/error"
+
+
+@pytest.mark.asyncio
+async def test_standard_kiss_config_command_is_accepted_without_unknown_error(service):
+    result = await service.handle_kiss_frame(KissFrame(KISS_CMD_TXDELAY, b"\x1e"))
+
+    assert result is True
+    assert service.counters.kiss_unknown_command_count == 0
+    assert service.mqtt.published[-1][0] == "kiss/config"
+    assert service.ring.snapshot()[-1]["status"] == "kiss_config"
 
 
 @pytest.mark.asyncio

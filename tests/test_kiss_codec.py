@@ -38,6 +38,26 @@ def test_stream_decoder_decodes_multiple_frames_and_preserves_payload_bytes():
     ]
 
 
+def test_stream_decoder_masks_standard_kiss_port_nibble_for_data_frames():
+    codec = KissCodec()
+    frame = codec.feed(bytes([FEND, 0x10, 0x01, 0x02, FEND]))[0]
+
+    assert frame.command == CMD_DATA
+    assert frame.port == 1
+    assert frame.raw_command == 0x10
+    assert frame.payload == b"\x01\x02"
+
+
+def test_stream_decoder_preserves_meshcore_extension_command_bytes():
+    codec = KissCodec()
+    frame = codec.feed(bytes([FEND, CMD_RXMETA, 25, 0x9F, FEND]))[0]
+
+    assert frame.command == CMD_RXMETA
+    assert frame.port == 0
+    assert frame.raw_command == CMD_RXMETA
+    assert frame.payload == bytes([25, 0x9F])
+
+
 def test_stream_decoder_reports_invalid_escape_and_drops_frame():
     codec = KissCodec()
 

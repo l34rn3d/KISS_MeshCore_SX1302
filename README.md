@@ -22,6 +22,8 @@ Initial implementation/prototype. The pure daemon behavior is covered by tests; 
 
 - Standard KISS framing with `FEND/FESC` escaping.
 - MeshCore KISS `Data 0x00` frames for TX and RX.
+- Standard KISS port-nibble decoding, so `0x10` is handled as Data on port 1.
+- Standard KISS config commands `TXDELAY`, `PERSIST`, `SLOTTIME`, `TXTAIL`, `FULLDUP`, and `RETURN` are accepted/recorded without breaking modem operation.
 - 1..255 byte MeshCore payload length enforcement.
 - No KISS-level CRC/FCS.
 - Payload bytes are passed through unchanged.

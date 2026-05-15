@@ -8,15 +8,35 @@ FESC = 0xDB
 TFEND = 0xDC
 TFESC = 0xDD
 CMD_DATA = 0x00
+KISS_CMD_TXDELAY = 0x01
+KISS_CMD_PERSIST = 0x02
+KISS_CMD_SLOTTIME = 0x03
+KISS_CMD_TXTAIL = 0x04
+KISS_CMD_FULLDUP = 0x05
+KISS_CMD_RETURN = 0xFF
 CMD_TXDONE = 0xF8
 CMD_RXMETA = 0xF9
 MAX_MESHCORE_PAYLOAD = 255
+_STANDARD_KISS_COMMANDS = {
+    CMD_DATA,
+    KISS_CMD_TXDELAY,
+    KISS_CMD_PERSIST,
+    KISS_CMD_SLOTTIME,
+    KISS_CMD_TXTAIL,
+    KISS_CMD_FULLDUP,
+}
 
 
 @dataclass(frozen=True)
 class KissFrame:
     command: int
     payload: bytes
+    port: int = 0
+    raw_command: int | None = None
+
+    def __post_init__(self) -> None:
+        if self.raw_command is None:
+            object.__setattr__(self, "raw_command", self.command & 0xFF)
 
 
 class KissDecodeError(ValueError):
@@ -73,9 +93,10 @@ class KissCodec:
         for b in data:
             if b == FEND:
                 if self._in_frame and self._buf:
-                    command = self._buf[0]
+                    raw_command = self._buf[0]
+                    command, port = self._normalize_command(raw_command)
                     payload = bytes(self._buf[1:])
-                    frames.append(KissFrame(command, payload))
+                    frames.append(KissFrame(command, payload, port=port, raw_command=raw_command))
                 self._buf.clear()
                 self._in_frame = True
                 self._escaped = False
@@ -96,6 +117,15 @@ class KissCodec:
             else:
                 self._buf.append(b)
         return frames
+
+    @staticmethod
+    def _normalize_command(raw_command: int) -> tuple[int, int]:
+        if raw_command in (CMD_RXMETA, CMD_TXDONE, KISS_CMD_RETURN):
+            return raw_command, 0
+        low_command = raw_command & 0x0F
+        if low_command in _STANDARD_KISS_COMMANDS:
+            return low_command, (raw_command & 0xF0) >> 4
+        return raw_command, 0
 
     def _drop_bad_frame(self, message: str) -> None:
         self.decode_error_count += 1
