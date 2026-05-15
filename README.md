@@ -42,8 +42,7 @@ Initial implementation/prototype. The pure daemon behavior is covered by tests; 
 - PTY endpoint with default symlink `/tmp/sx1302-kiss`.
 - Serial endpoint for real tty devices.
 - SX1302 adapter around `pymc_core.hardware.sx1302_wrapper.SX1302Radio`.
-- CRC-aware SX1302 receive metadata path when the local `pyMC_core` exposes `wait_for_rx_packet()`.
-- CRC policy:
+- CRC policy inside the KISS daemon/service boundary:
   - `crc_ok=True`: forward to pyMC, MQTT `rx/good`, dashboard event.
   - `crc_ok=False`: drop from pyMC, MQTT `rx/bad_crc`, dashboard event.
   - `crc_ok=None`: drop by default, optional lab-only forwarding.

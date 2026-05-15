@@ -14,14 +14,14 @@ Last verified state:
 33 tests passing
 ```
 
-## Recently completed: CRC-aware RX metadata and packaging docs
+## Recently corrected: daemon-only CRC/packaging work
 
-Implemented in this pass:
+Correction after review:
 
-- `pyMC_core` now exposes `SX1302Radio.wait_for_rx_packet()` for RX metadata events, including CRC failures.
-- Good CRC packets still feed the legacy `wait_for_rx()` payload queue.
-- Bad CRC packets are exposed to metadata consumers but not forwarded through the legacy payload queue.
-- `sx1302-meshcore-kiss` now consumes `wait_for_rx_packet()` when available and preserves frequency, bandwidth, SF, CR, RSSI, SNR, channel, timestamp, and `crc_ok` in `RxPacket`.
+- `pyMC_core` was returned to its previous state; no CRC receive API changes are kept there.
+- The daemon still enforces CRC policy at its own service boundary for injected/future adapter `RxPacket` values.
+- Good daemon-side RX packets are forwarded over KISS `Data 0x00`.
+- Bad/unknown CRC daemon-side RX packets are not forwarded as KISS data; they are only telemetry/dashboard/MQTT events.
 - Added Python packaging metadata and install/service documentation in `docs/install.md`.
 
 ## Recently completed: MeshCore SetHardware `0x06` protocol alignment
@@ -99,14 +99,15 @@ Acceptance:
 - outgoing pyMC packets become daemon TX requests
 - daemon RX frames are received by pyMC
 
-## 3. Hardware-prove RX CRC metadata handling
+## 3. Pass CRC/reporting only through KISS daemon path
 
-Software support is now in place:
+`pyMC_core` is intentionally not being changed for CRC metadata. The daemon should remain the boundary that decides what is forwarded over KISS:
 
-- `pyMC_core` has a metadata receive queue that can expose `crc_ok=True`, `crc_ok=False`, or `crc_ok=None`.
-- the daemon converts that metadata into `RxPacket` and applies the existing forwarding/drop policy.
+- KISS `Data 0x00` carries raw MeshCore payload bytes only.
+- `RxMeta 0xF9` and `TxDone 0xF8` travel as MeshCore `SetHardware 0x06` frames.
+- Bad/unknown CRC packets, when an SX1302-facing daemon path can surface them, should be MQTT/dashboard telemetry only and must not be sent as KISS `Data 0x00`.
 
-Still needs real RF/hardware proof that the SX1302 HAL path actually surfaces bad CRC packets with enough metadata on the target hardware.
+Still needed: prove whether the current SX1302 receive source can surface bad CRC packets without modifying `pyMC_core`; if not, leave bad-CRC reporting as unsupported until a daemon-local hardware path exists.
 
 Acceptance:
 
