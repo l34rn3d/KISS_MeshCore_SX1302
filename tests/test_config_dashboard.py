@@ -100,10 +100,13 @@ def test_dashboard_homepage_is_usable_status_ui():
         assert "fetch('/api/status')" in html or "getJson('/api/status')" in html
         assert "rx_good_count" in html
         assert "payload_hex" in html
-        assert "Runtime config" in html
-        assert "focused view" in html
-        assert "Active config" not in html
-        assert "KISS endpoint" in html
+        assert "Radio State" in html
+        assert "62.5 kHz / SX1261" in html
+        assert "Activity Counters" in html
+        assert "Active config" in html
+        assert "config-groups" in html
+        assert "Live daemon logs" in html
+        assert "EventSource('/api/live-logs')" in html
         assert "aabbcc" not in html  # packet payloads come from API fetches, not server-rendered history
     finally:
         server.stop()

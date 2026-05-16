@@ -3,231 +3,14 @@ from __future__ import annotations
 import html
 import json
 import threading
+import time
+from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Callable
 
 from sx1302_meshcore_kiss.config import AppConfig, redact_config
 from sx1302_meshcore_kiss.telemetry.counters import Counters
 from sx1302_meshcore_kiss.telemetry.ring_buffer import PacketRingBuffer
-
-
-_DASHBOARD_CSS = r"""
-:root {
-  color-scheme: dark;
-  --bg: #050814;
-  --panel: rgba(15, 23, 42, .78);
-  --panel-strong: rgba(15, 23, 42, .96);
-  --panel-soft: rgba(30, 41, 59, .52);
-  --border: rgba(148, 163, 184, .16);
-  --text: #e5edf8;
-  --muted: #94a3b8;
-  --muted-2: #64748b;
-  --good: #22c55e;
-  --warn: #f59e0b;
-  --bad: #fb7185;
-  --accent: #38bdf8;
-  --accent-2: #818cf8;
-  --shadow: 0 24px 80px rgba(0, 0, 0, .42);
-}
-* { box-sizing: border-box; }
-body {
-  margin: 0;
-  min-height: 100vh;
-  font-family: "Noto Sans", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  color: var(--text);
-  background:
-    radial-gradient(circle at 10% 0%, rgba(56, 189, 248, .22), transparent 28rem),
-    radial-gradient(circle at 85% 12%, rgba(129, 140, 248, .18), transparent 32rem),
-    linear-gradient(135deg, #020617 0%, var(--bg) 48%, #0f172a 100%);
-}
-button, input, select { font: inherit; }
-.shell { display: grid; grid-template-columns: 18rem minmax(0, 1fr); min-height: 100vh; }
-.sidebar {
-  position: sticky; top: 0; height: 100vh; overflow: auto;
-  padding: 1.25rem; border-right: 1px solid var(--border);
-  background: linear-gradient(180deg, rgba(2, 6, 23, .92), rgba(15, 23, 42, .76));
-  backdrop-filter: blur(18px);
-}
-.brand { display: flex; align-items: center; gap: .85rem; margin-bottom: 1.5rem; }
-.logo {
-  width: 2.8rem; height: 2.8rem; border-radius: 1rem;
-  display: grid; place-items: center; font-weight: 900; letter-spacing: -.08em;
-  background: linear-gradient(135deg, var(--accent), var(--accent-2));
-  color: #020617; box-shadow: 0 0 42px rgba(56, 189, 248, .35);
-}
-.brand h1 { margin: 0; font-size: 1rem; line-height: 1.15; }
-.brand small { display: block; color: var(--muted); margin-top: .15rem; }
-.nav { display: grid; gap: .45rem; margin: 1.25rem 0; }
-.nav a {
-  color: var(--muted); text-decoration: none; padding: .65rem .75rem; border-radius: .85rem;
-  border: 1px solid transparent;
-}
-.nav a:hover { color: var(--text); background: var(--panel-soft); border-color: var(--border); }
-.side-card { margin-top: 1rem; padding: .9rem; border: 1px solid var(--border); border-radius: 1rem; background: var(--panel); }
-.side-card .label { color: var(--muted); font-size: .78rem; text-transform: uppercase; letter-spacing: .08em; }
-.side-card .value { margin-top: .35rem; font-weight: 800; overflow-wrap: anywhere; }
-.main { min-width: 0; padding: 1.1rem clamp(1rem, 3vw, 2rem) 2rem; }
-.topbar { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 1rem; }
-.topbar h2 { margin: 0; font-size: clamp(1.35rem, 3vw, 2.25rem); letter-spacing: -.04em; }
-.updated { color: var(--muted); text-align: right; }
-.hero {
-  position: relative; overflow: hidden; margin-bottom: 1rem;
-  border: 1px solid var(--border); border-radius: 1.35rem; background: var(--panel-strong);
-  box-shadow: var(--shadow);
-}
-.hero::before {
-  content: ""; position: absolute; inset: -35% -10% auto auto; width: 32rem; height: 32rem; border-radius: 50%;
-  background: radial-gradient(circle, rgba(56, 189, 248, .28), transparent 60%);
-}
-.hero-inner { position: relative; padding: clamp(1rem, 2.6vw, 1.6rem); display: grid; grid-template-columns: 1.45fr .9fr; gap: 1rem; align-items: end; }
-.hero-title { margin: 0 0 .35rem; font-size: clamp(1.8rem, 4vw, 3.6rem); line-height: .92; letter-spacing: -.07em; }
-.hero-copy { color: var(--muted); max-width: 56rem; margin: .65rem 0 0; }
-.chip-row { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: 1rem; }
-.chip { display: inline-flex; align-items: center; gap: .45rem; padding: .42rem .7rem; border: 1px solid var(--border); border-radius: 999px; background: rgba(15, 23, 42, .78); color: var(--muted); }
-.status-dot { width: .62rem; height: .62rem; border-radius: 50%; display: inline-block; background: var(--muted-2); box-shadow: 0 0 0 .18rem rgba(100, 116, 139, .15); }
-.status-dot.good { background: var(--good); box-shadow: 0 0 0 .18rem rgba(34, 197, 94, .16); }
-.status-dot.warn { background: var(--warn); box-shadow: 0 0 0 .18rem rgba(245, 158, 11, .16); }
-.status-dot.bad { background: var(--bad); box-shadow: 0 0 0 .18rem rgba(251, 113, 133, .16); }
-.grid { display: grid; gap: 1rem; grid-template-columns: repeat(12, minmax(0, 1fr)); }
-.card {
-  grid-column: span 4; min-width: 0; padding: 1rem;
-  border: 1px solid var(--border); border-radius: 1.2rem; background: var(--panel);
-  box-shadow: 0 14px 44px rgba(0, 0, 0, .22); backdrop-filter: blur(14px);
-}
-.card.wide { grid-column: span 8; }
-.card.full { grid-column: 1 / -1; }
-.card h3 { margin: 0 0 .75rem; font-size: .95rem; letter-spacing: .01em; display:flex; align-items:center; justify-content:space-between; gap:.75rem; }
-.metric { font-size: clamp(2rem, 5vw, 3.6rem); font-weight: 900; line-height: .95; letter-spacing: -.08em; }
-.submetric { color: var(--muted); margin-top: .35rem; }
-.metrics-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .65rem; margin-top: .75rem; }
-.mini { padding: .7rem; border-radius: .9rem; background: rgba(2, 6, 23, .38); border: 1px solid var(--border); }
-.mini .k { color: var(--muted); font-size: .78rem; }
-.mini .v { font-weight: 800; margin-top: .2rem; overflow-wrap: anywhere; }
-pre { margin: 0; white-space: pre-wrap; word-break: break-word; background: rgba(2, 6, 23, .52); border: 1px solid var(--border); border-radius: .95rem; padding: .8rem; color: #bfdbfe; overflow: auto; max-height: 24rem; }
-.table-wrap { overflow: auto; border: 1px solid var(--border); border-radius: 1rem; background: rgba(2, 6, 23, .32); }
-table { width: 100%; min-width: 820px; border-collapse: collapse; font-size: .9rem; }
-th, td { text-align: left; padding: .72rem .75rem; border-bottom: 1px solid var(--border); vertical-align: top; }
-th { color: var(--muted); font-size: .76rem; letter-spacing: .08em; text-transform: uppercase; font-weight: 800; }
-tr:last-child td { border-bottom: 0; }
-code { color: #bae6fd; }
-.pill { display: inline-flex; align-items: center; border: 1px solid var(--border); border-radius: 999px; padding: .17rem .5rem; color: var(--muted); background: rgba(15, 23, 42, .74); }
-.good-text { color: var(--good); } .warn-text { color: var(--warn); } .bad-text { color: var(--bad); }
-.bars { display: grid; gap: .55rem; margin-top: .85rem; }
-.bar { display: grid; grid-template-columns: 8rem 1fr 4rem; gap: .6rem; align-items: center; color: var(--muted); font-size: .82rem; }
-.bar-track { height: .55rem; border-radius: 999px; background: rgba(100, 116, 139, .18); overflow: hidden; }
-.bar-fill { height: 100%; width: 0%; border-radius: inherit; background: linear-gradient(90deg, var(--accent), var(--accent-2)); transition: width .25s ease; }
-@media (max-width: 980px) { .shell { grid-template-columns: 1fr; } .sidebar { position: relative; height: auto; } .hero-inner { grid-template-columns: 1fr; } .card, .card.wide { grid-column: 1 / -1; } }
-"""
-
-
-_DASHBOARD_JS = r"""
-const fmtJson = (v) => JSON.stringify(v ?? {}, null, 2);
-const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const num = (v) => Number.isFinite(Number(v)) ? Number(v) : 0;
-async function getJson(path) {
-  const response = await fetch(path, {cache: 'no-store'});
-  if (!response.ok) throw new Error(`${path} ${response.status}`);
-  return response.json();
-}
-function stateClass(value) {
-  if (value === true || value === 'ok' || value === 'running' || value === 'started' || value === 'connected') return 'good';
-  if (value === false || value === 'down' || value === 'error' || value === 'failed' || value === 'disconnected') return 'bad';
-  return 'warn';
-}
-function setText(id, value) { const el = document.getElementById(id); if (el) el.textContent = value; }
-function setDot(id, value) { const el = document.getElementById(id); if (el) el.className = `status-dot ${stateClass(value)}`; }
-function setPanel(name, value) {
-  const primary = value?.connected ?? value?.started ?? value?.mode ?? value?.state ?? 'unknown';
-  setDot(`${name}-dot`, primary);
-  setText(`${name}-primary`, String(primary));
-  setText(`${name}-json`, fmtJson(value));
-}
-function statusText(status) {
-  const parts = [];
-  if (status.radio) parts.push(`radio: ${status.radio.started ?? status.radio.state ?? 'unknown'}`);
-  if (status.kiss) parts.push(`kiss: ${status.kiss.mode ?? status.kiss.state ?? 'unknown'}`);
-  if (status.mqtt) parts.push(`mqtt: ${status.mqtt.connected ?? 'unknown'}`);
-  if (status.mqtt_connected !== undefined) parts.push(`mqtt: ${status.mqtt_connected}`);
-  return parts.join(' · ') || 'waiting for status';
-}
-function renderPackets(packets) {
-  const rows = document.getElementById('packet-rows');
-  if (!packets.length) { rows.innerHTML = '<tr><td colspan="7" class="muted">No packet events yet</td></tr>'; return; }
-  rows.innerHTML = packets.slice().reverse().map(p => {
-    const status = p.status || '';
-    const cls = /good|ok|done/i.test(status) ? 'good-text' : /bad|err|crc/i.test(status) ? 'bad-text' : 'warn-text';
-    return `<tr>
-      <td>${esc(p.timestamp || p.time || '')}</td>
-      <td><span class="pill">${esc(p.direction || '')}</span></td>
-      <td class="${cls}">${esc(status)}</td>
-      <td>${esc(p.payload_len ?? p.length ?? '')}</td>
-      <td>${esc(p.frequency_hz || '')} ${esc(p.spreading_factor ? 'SF'+p.spreading_factor : '')} ${esc(p.bandwidth_hz || '')}</td>
-      <td>${esc(p.rssi_dbm ?? '')} / ${esc(p.snr_db ?? '')}</td>
-      <td><code>${esc(p.payload_hex || '')}</code></td>
-    </tr>`;
-  }).join('');
-}
-function renderCounterBars(c) {
-  const keys = ['rx_good_count', 'rx_crc_ok_count', 'rx_bad_crc_count', 'tx_done_count', 'tx_error_count'];
-  const max = Math.max(1, ...keys.map(k => num(c[k])));
-  const rows = keys.map(k => {
-    const v = num(c[k]);
-    const pct = Math.max(2, Math.round((v / max) * 100));
-    return `<div class="bar"><div>${esc(k.replace(/_count$/, ''))}</div><div class="bar-track"><div class="bar-fill" style="width:${pct}%"></div></div><div>${v}</div></div>`;
-  });
-  document.getElementById('counter-bars').innerHTML = rows.join('');
-}
-function renderRuntimeConfig(config) {
-  const radio = config.radio || {};
-  const kiss = config.kiss || {};
-  const rows = [
-    ['Node', config.node_id],
-    ['Frequency', radio.frequency ? `${radio.frequency} Hz` : 'unknown'],
-    ['LoRa mode', `SF${radio.spreading_factor ?? '?'} / ${radio.bandwidth ?? '?'} Hz / CR4/${radio.coding_rate ?? '?'}`],
-    ['Preamble', radio.preamble_len ?? radio.preamble_length ?? 'unknown'],
-    ['Sync word', radio.sync_word ?? 'unknown'],
-    ['KISS mode', kiss.mode ?? 'unknown'],
-    ['KISS endpoint', kiss.symlink || kiss.serial_port || 'unknown'],
-    ['SPI device', radio.spi_device || radio.com_path || 'unknown'],
-    ['Backend', radio.backend || 'unknown'],
-  ];
-  document.getElementById('runtime-config').innerHTML = rows.map(([k, v]) => `<div class="mini"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div></div>`).join('');
-}
-async function refresh() {
-  try {
-    const [status, counters, packets, config] = await Promise.all([
-      getJson('/api/status'), getJson('/api/counters'), getJson('/api/packets'), getJson('/api/config')
-    ]);
-    const c = counters.counters || {};
-    const totalRx = num(c.rx_good_count) + num(c.rx_bad_crc_count) + num(c.rx_unknown_crc_count);
-    const totalTx = num(c.tx_done_count) + num(c.tx_error_count) + num(c.tx_requested_count);
-    const totalErrors = num(c.rx_bad_crc_count) + num(c.rx_dropped_count) + num(c.tx_error_count) + num(c.kiss_decode_error_count);
-    const node = status.node_id || config.node_id || 'unknown';
-    setText('node-id', node);
-    setText('side-node', node);
-    setText('hero-status', statusText(status));
-    setText('rx-total', totalRx);
-    setText('rx-total-card', totalRx);
-    setText('tx-total', totalTx);
-    setText('error-total', totalErrors);
-    setText('event-total', packets.length);
-    setText('updated', `updated ${new Date().toLocaleTimeString()}`);
-    setText('side-endpoint', config.kiss?.symlink || config.kiss?.serial_port || config.kiss?.mode || 'unknown');
-    setText('side-dashboard', `${config.dashboard?.bind_host || ''}:${config.dashboard?.port || ''}`);
-    setPanel('radio', status.radio || status.sx1302 || {state: status.radio_state || 'unknown'});
-    setPanel('mqtt', status.mqtt || {connected: status.mqtt_connected ?? false});
-    setPanel('kiss', status.kiss || {mode: config.kiss?.mode || 'unknown'});
-    setText('counters-json', fmtJson(counters.counters || counters));
-    renderRuntimeConfig(config);
-    renderCounterBars(c);
-    renderPackets(packets || []);
-  } catch (err) {
-    setText('updated', `dashboard error: ${err.message}`);
-  }
-}
-refresh();
-setInterval(refresh, 2000);
-"""
 
 
 def _dashboard_html(node_id: str) -> bytes:
@@ -238,64 +21,317 @@ def _dashboard_html(node_id: str) -> bytes:
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>SX1302 MeshCore KISS - {safe_node_id}</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <style>{_DASHBOARD_CSS}</style>
+  <style>
+    :root {{
+      color-scheme: dark;
+      --bg: #071019;
+      --panel: #101b2a;
+      --panel-2: #0d1623;
+      --panel-3: #071321;
+      --border: #26384f;
+      --text: #e6edf6;
+      --muted: #91a4bc;
+      --good: #4ade80;
+      --warn: #facc15;
+      --bad: #fb7185;
+      --accent: #38bdf8;
+      --chip: #16263a;
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: radial-gradient(circle at 18% -10%, rgba(56,189,248,.18), transparent 34rem), linear-gradient(180deg, #06101a, var(--bg));
+      color: var(--text);
+    }}
+    header {{ padding: 1.1rem 1.25rem; border-bottom: 1px solid var(--border); background: rgba(7, 16, 25, 0.9); position: sticky; top: 0; backdrop-filter: blur(10px); z-index: 2; }}
+    .header-inner {{ max-width: 1520px; margin: 0 auto; display: flex; justify-content: space-between; gap: 1rem; align-items: center; }}
+    h1 {{ margin: 0; font-size: clamp(1.35rem, 3vw, 2.1rem); }}
+    h2 {{ margin: 0; font-size: 1rem; color: #dbeafe; }}
+    h3 {{ margin: 1rem 0 .45rem; color: #bfdbfe; font-size: .92rem; text-transform: uppercase; letter-spacing: .06em; }}
+    .subtitle {{ color: var(--muted); margin-top: .35rem; }}
+    main {{ padding: 1rem; max-width: 1520px; margin: 0 auto; }}
+    .layout {{ display: grid; gap: 1rem; grid-template-columns: minmax(0, 1.05fr) minmax(360px, .95fr); align-items: start; }}
+    .stack {{ display: grid; gap: 1rem; }}
+    .topline {{ display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .75rem; margin-bottom: 1rem; }}
+    .card {{ background: linear-gradient(180deg, rgba(16, 27, 42, .96), rgba(13, 22, 35, .96)); border: 1px solid var(--border); border-radius: 16px; padding: 1rem; box-shadow: 0 12px 40px rgba(0,0,0,.24); }}
+    .summary {{ padding: .8rem; min-height: 6.2rem; display: grid; gap: .45rem; align-content: space-between; }}
+    .card-head {{ display: flex; justify-content: space-between; gap: 1rem; align-items: center; margin-bottom: .8rem; }}
+    .metric {{ font-size: 1.65rem; font-weight: 800; letter-spacing: -.03em; line-height: 1; }}
+    .metric small {{ display: block; font-size: .76rem; font-weight: 600; color: var(--muted); margin-top: .35rem; letter-spacing: 0; }}
+    .muted {{ color: var(--muted); }}
+    .status-dot {{ display: inline-block; width: .7rem; height: .7rem; border-radius: 50%; margin-right: .45rem; background: var(--muted); }}
+    .status-dot.good {{ background: var(--good); }}
+    .status-dot.warn {{ background: var(--warn); }}
+    .status-dot.bad {{ background: var(--bad); }}
+    .pill {{ display: inline-flex; align-items: center; border: 1px solid var(--border); background: var(--chip); border-radius: 999px; padding: .16rem .6rem; color: #c7d2fe; font-size: .82rem; white-space: nowrap; }}
+    .pill.good {{ color: var(--good); }} .pill.warn {{ color: var(--warn); }} .pill.bad {{ color: var(--bad); }}
+    dl {{ display: grid; grid-template-columns: minmax(8rem, .75fr) 1.25fr; gap: .42rem .8rem; margin: 0; }}
+    dt {{ color: var(--muted); }}
+    dd {{ margin: 0; word-break: break-word; }}
+    .kv-list {{ display: grid; gap: .38rem; }}
+    .kv-row {{ display: grid; grid-template-columns: minmax(9rem, .35fr) 1fr; gap: .75rem; padding: .36rem 0; border-bottom: 1px solid rgba(38,56,79,.65); }}
+    .kv-row:last-child {{ border-bottom: 0; }}
+    .kv-key {{ color: var(--muted); }}
+    .kv-val {{ font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: #dbeafe; overflow-wrap: anywhere; }}
+    .counter-grid {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .65rem; }}
+    .counter {{ background: rgba(6,16,27,.55); border: 1px solid var(--border); border-radius: 12px; padding: .7rem; }}
+    .counter .num {{ font-size: 1.35rem; font-weight: 800; }}
+    .counter .label {{ color: var(--muted); font-size: .82rem; margin-top: .15rem; }}
+    .event-list {{ display: grid; gap: .65rem; margin-top: .8rem; max-height: 38rem; overflow-y: auto; padding-right: .2rem; }}
+    .event {{ border: 1px solid var(--border); border-radius: 14px; background: rgba(6,16,27,.6); padding: .75rem; }}
+    .event-title {{ display: flex; flex-wrap: wrap; gap: .45rem; align-items: center; margin-bottom: .45rem; }}
+    .event-lines {{ display: grid; gap: .25rem; }}
+    .decoded {{ margin-top: .55rem; padding-top: .55rem; border-top: 1px solid rgba(38,56,79,.65); }}
+    .line {{ display: grid; grid-template-columns: 7.5rem 1fr; gap: .6rem; }}
+    .line .label {{ color: var(--muted); }}
+    code {{ color: #bae6fd; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap: anywhere; }}
+    .empty {{ color: var(--muted); padding: .75rem; border: 1px dashed var(--border); border-radius: 12px; }}
+    details {{ border: 1px solid var(--border); border-radius: 14px; background: rgba(6,16,27,.35); }}
+    summary {{ cursor: pointer; padding: .85rem 1rem; color: #dbeafe; font-weight: 700; }}
+    details[open] summary {{ border-bottom: 1px solid var(--border); }}
+    .details-body {{ padding: 0 1rem 1rem; }}
+    .diag {{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .45rem .8rem; }}
+    .diag div {{ min-width: 0; }}
+    .diag .kv-val {{ font-size: .9rem; }}
+    .log-box {{ height: 24rem; overflow-y: auto; background: rgba(0, 0, 0, .38); border: 1px solid var(--border); border-radius: 12px; padding: .75rem; font: .82rem/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }}
+    .log-line {{ color: #dbeafe; border-bottom: 1px solid rgba(38,56,79,.28); padding: .12rem 0; }}
+    .log-line.error {{ color: var(--bad); }}
+    .log-line.warn {{ color: var(--warn); }}
+    @media (max-width: 980px) {{
+      .header-inner {{ display: block; }}
+      .layout {{ grid-template-columns: 1fr; }}
+      .topline {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
+      .counter-grid {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
+    }}
+    @media (max-width: 560px) {{
+      main {{ padding: .65rem; }}
+      .topline {{ grid-template-columns: 1fr; }}
+      .counter-grid {{ grid-template-columns: 1fr; }}
+      dl, .kv-row, .line, .diag {{ grid-template-columns: 1fr; }}
+    }}
+  </style>
 </head>
 <body>
-  <div class="shell">
-    <aside class="sidebar">
-      <div class="brand"><div class="logo">SX</div><div><h1>SX1302 KISS</h1><small>MeshCore bridge</small></div></div>
-      <nav class="nav" aria-label="Dashboard sections">
-        <a href="#overview">Overview</a>
-        <a href="#radio">Radio / KISS / MQTT</a>
-        <a href="#traffic">Traffic</a>
-        <a href="#events">Packet events</a>
-        <a href="#config">Config</a>
-      </nav>
-      <div class="side-card"><div class="label">Node</div><div class="value" id="side-node">{safe_node_id}</div></div>
-      <div class="side-card"><div class="label">KISS endpoint</div><div class="value" id="side-endpoint">loading…</div></div>
-      <div class="side-card"><div class="label">Dashboard bind</div><div class="value" id="side-dashboard">loading…</div></div>
-    </aside>
-    <main class="main">
-      <div class="topbar"><h2>Repeater bridge dashboard</h2><div class="updated" id="updated">loading…</div></div>
-      <section class="hero" id="overview">
-        <div class="hero-inner">
-          <div>
-            <h1 class="hero-title">Node <span id="node-id">{safe_node_id}</span></h1>
-            <p class="hero-copy" id="hero-status">Waiting for live status…</p>
-            <div class="chip-row">
-              <span class="chip"><span id="radio-dot" class="status-dot"></span>Radio <strong id="radio-primary">loading</strong></span>
-              <span class="chip"><span id="kiss-dot" class="status-dot"></span>KISS <strong id="kiss-primary">loading</strong></span>
-              <span class="chip"><span id="mqtt-dot" class="status-dot"></span>MQTT <strong id="mqtt-primary">loading</strong></span>
-            </div>
-          </div>
-          <div class="metrics-row">
-            <div class="mini"><div class="k">RX events</div><div class="v" id="rx-total">0</div></div>
-            <div class="mini"><div class="k">TX events</div><div class="v" id="tx-total">0</div></div>
-            <div class="mini"><div class="k">Errors</div><div class="v" id="error-total">0</div></div>
-            <div class="mini"><div class="k">Buffered packets</div><div class="v" id="event-total">0</div></div>
-          </div>
-        </div>
-      </section>
-      <section class="grid" id="radio">
-        <article class="card"><h3>Radio</h3><pre id="radio-json">{{}}</pre></article>
-        <article class="card"><h3>KISS</h3><pre id="kiss-json">{{}}</pre></article>
-        <article class="card"><h3>MQTT</h3><pre id="mqtt-json">{{}}</pre></article>
-        <article class="card wide" id="traffic"><h3>Counters</h3><div class="metric" id="rx-total-card">0</div><div class="submetric">RX / TX / error activity from the daemon API</div><div class="bars" id="counter-bars"></div></article>
-        <article class="card" id="counters"><h3>Raw counters</h3><pre id="counters-json">{{"rx_good_count":0,"tx_done_count":0,"payload_hex":"API field"}}</pre></article>
-        <article class="card full" id="events">
-          <h3>Latest packet events <span class="pill">live ring buffer</span></h3>
-          <div class="table-wrap"><table aria-label="Latest packet events"><thead><tr><th>Time</th><th>Dir</th><th>Status</th><th>Len</th><th>RF</th><th>RSSI / SNR</th><th>payload_hex</th></tr></thead><tbody id="packet-rows"><tr><td colspan="7" class="muted">Loading packet events…</td></tr></tbody></table></div>
+  <header>
+    <div class="header-inner">
+      <div>
+        <h1>SX1302 MeshCore KISS</h1>
+        <div class="subtitle">Node <strong id="node-id">{safe_node_id}</strong> · <span id="updated">loading…</span></div>
+      </div>
+      <span id="overall-badge" class="pill warn">starting</span>
+    </div>
+  </header>
+  <main>
+    <section class="topline">
+      <article class="card summary"><span class="muted">Radio</span><div class="metric" id="summary-radio">--<small>waiting</small></div></article>
+      <article class="card summary"><span class="muted">Link</span><div class="metric" id="summary-link">--<small>frequency</small></div></article>
+      <article class="card summary"><span class="muted">Packets</span><div class="metric" id="summary-packets">0 / 0<small>RX good / TX done</small></div></article>
+      <article class="card summary"><span class="muted">Noise</span><div class="metric" id="summary-noise">--<small>floor</small></div></article>
+    </section>
+    <section class="layout">
+      <div class="stack">
+        <article class="card"><div class="card-head"><h2>Radio State</h2><span id="radio-badge" class="pill warn">loading</span></div><dl id="radio-list"></dl></article>
+        <article class="card"><div class="card-head"><h2>62.5 kHz / SX1261</h2><span id="sx1261-badge" class="pill warn">loading</span></div><div id="sx1261-diag" class="diag"></div></article>
+        <article class="card"><div class="card-head"><h2>Activity Counters</h2><span class="pill" id="packet-total">0 total</span></div><div class="counter-grid" id="counter-grid"></div></article>
+        <details>
+          <summary>Active config</summary>
+          <div class="details-body" id="config-groups"></div>
+        </details>
+      </div>
+      <div class="stack">
+        <article class="card"><div class="card-head"><h2>KISS / MQTT</h2><span id="kiss-badge" class="pill warn">loading</span></div><dl id="kiss-list"></dl><h3>MQTT</h3><dl id="mqtt-list"></dl></article>
+        <article class="card">
+          <div class="card-head"><h2>Latest packet events</h2><span class="muted">newest first</span></div>
+          <div id="packet-list" class="event-list"><div class="empty">Loading packet events…</div></div>
         </article>
-        <article class="card full" id="config"><h3>Runtime config <span class="pill">focused view</span></h3><div class="metrics-row" id="runtime-config"><div class="mini"><div class="k">Loading</div><div class="v">config…</div></div></div></article>
-      </section>
-    </main>
-  </div>
-  <script>{_DASHBOARD_JS}</script>
+        <article class="card">
+          <div class="card-head"><h2>Live daemon logs</h2><span id="logs-badge" class="pill warn">connecting</span></div>
+          <div class="muted">Live-only daemon log stream from page load onward. No historical log backlog is loaded.</div>
+          <div id="live-logs" class="log-box" aria-live="polite"><div class="muted">Waiting for new log lines…</div></div>
+        </article>
+      </div>
+    </section>
+  </main>
+  <script>
+    const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[c]));
+    const title = (s) => String(s || '').replace(/_/g, ' ').split(' ').map(part => part ? part[0].toUpperCase() + part.slice(1) : '').join(' ');
+    const has = (v) => v !== undefined && v !== null && v !== '';
+    const fmtHz = (hz) => has(hz) ? `${{(Number(hz)/1e6).toFixed(3)}} MHz` : '';
+    const fmtBw = (hz) => has(hz) ? `${{(Number(hz)/1000).toFixed(Number(hz) % 1000 ? 1 : 0)}} kHz` : '';
+    async function getJson(path) {{
+      const response = await fetch(path, {{cache: 'no-store'}});
+      if (!response.ok) throw new Error(`${{path}} ${{response.status}}`);
+      return response.json();
+    }}
+    function badgeClass(value) {{
+      const s = String(value ?? '').toLowerCase();
+      if (value === true || ['ok','running','started','active','connected','tx_done','good'].includes(s)) return 'good';
+      if (value === false || ['down','error','failed','bad','tx_error','radio_not_configured'].includes(s)) return 'bad';
+      return 'warn';
+    }}
+    function setBadge(id, value) {{
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.className = `pill ${{badgeClass(value)}}`;
+      el.textContent = String(value ?? 'unknown');
+    }}
+    function setSummary(id, value, caption) {{
+      document.getElementById(id).innerHTML = `${{esc(value)}}<small>${{esc(caption)}}</small>`;
+    }}
+    function renderDl(id, rows) {{
+      const el = document.getElementById(id);
+      const filtered = rows.filter(([_, v]) => has(v));
+      el.innerHTML = filtered.length ? filtered.map(([k, v]) => `<dt>${{esc(k)}}</dt><dd>${{esc(v)}}</dd>`).join('') : '<dt>Status</dt><dd class="muted">No data yet</dd>';
+    }}
+    function renderKvRows(obj) {{
+      return Object.entries(obj || {{}})
+        .filter(([_, v]) => typeof v !== 'object' || v === null)
+        .map(([k, v]) => `<div class="kv-row"><div class="kv-key">${{esc(title(k))}}</div><div class="kv-val">${{esc(v)}}</div></div>`).join('');
+    }}
+    function renderConfig(config) {{
+      const groups = ['kiss', 'radio', 'crc', 'mqtt', 'status', 'dashboard', 'logging'];
+      const html = groups.map(g => `<h3>${{esc(g)}}</h3><div class="kv-list">${{renderKvRows(config[g]) || '<div class="muted">No entries</div>'}}</div>`).join('');
+      document.getElementById('config-groups').innerHTML = html;
+    }}
+    function renderCounters(counters) {{
+      const c = counters.counters || counters || {{}};
+      const wanted = [
+        ['rx_good_count', 'RX good'], ['rx_bad_crc_count', 'RX bad CRC'], ['rx_unknown_crc_count', 'RX unknown CRC'], ['rx_dropped_count', 'RX dropped'],
+        ['tx_requested_count', 'TX requested'], ['tx_done_count', 'TX done'], ['tx_error_count', 'TX error'], ['kiss_decode_error_count', 'KISS decode errors'], ['kiss_unknown_command_count', 'KISS unknown']
+      ];
+      const total = wanted.reduce((sum, [k]) => sum + Number(c[k] || 0), 0);
+      document.getElementById('packet-total').textContent = `${{total}} total`;
+      document.getElementById('counter-grid').innerHTML = wanted.map(([k, label]) => `<div class="counter"><div class="num">${{esc(c[k] || 0)}}</div><div class="label">${{esc(label)}}</div></div>`).join('');
+      return c;
+    }}
+    function renderDiag(id, rows) {{
+      const el = document.getElementById(id);
+      const filtered = rows.filter(([_, v]) => has(v));
+      el.innerHTML = filtered.length ? filtered.map(([k, v]) => `<div><div class="kv-key">${{esc(k)}}</div><div class="kv-val">${{esc(v)}}</div></div>`).join('') : '<div class="muted">No diagnostics yet</div>';
+    }}
+    function bytesFromHex(hex) {{
+      const clean = String(hex || '').replace(/[^0-9a-f]/gi, '');
+      if (!clean || clean.length % 2) return [];
+      const bytes = [];
+      for (let i = 0; i < clean.length; i += 2) bytes.push(parseInt(clean.slice(i, i + 2), 16));
+      return bytes;
+    }}
+    function asciiPreview(bytes) {{
+      if (!bytes.length) return '';
+      const chars = bytes.map(b => b >= 32 && b <= 126 ? String.fromCharCode(b) : '.').join('');
+      const printable = bytes.filter(b => b >= 32 && b <= 126).length;
+      return printable ? chars.slice(0, 96) : '';
+    }}
+    function payloadDecodeRows(p, meta) {{
+      const payloadHex = p.payload_hex || meta.payload_hex || '';
+      const bytes = bytesFromHex(payloadHex);
+      if (!bytes.length) return [];
+      const prefix = bytes.slice(0, 16).map(b => b.toString(16).padStart(2, '0')).join(' ');
+      const suffix = bytes.length > 16 ? bytes.slice(-8).map(b => b.toString(16).padStart(2, '0')).join(' ') : '';
+      const first = bytes[0];
+      const second = bytes.length > 1 ? bytes[1] : null;
+      const hints = [];
+      hints.push(`first=0x${{first.toString(16).padStart(2, '0')}}`);
+      if (second !== null) hints.push(`second=0x${{second.toString(16).padStart(2, '0')}}`);
+      if (bytes.every(b => b >= 32 && b <= 126 || b === 9 || b === 10 || b === 13)) hints.push('printable payload');
+      else hints.push('binary / likely encrypted');
+      return [
+        ['Decoded len', `${{bytes.length}} bytes`],
+        ['Hex prefix', prefix],
+        ['Hex suffix', suffix],
+        ['ASCII preview', asciiPreview(bytes)],
+        ['Basic hints', hints.join(' · ')],
+      ].filter(([_, v]) => has(v));
+    }}
+    function eventLines(p) {{
+      const radio = p.radio || {{}};
+      const meta = p.raw_metadata || {{}};
+      return [
+        ['Time', p.timestamp || p.time],
+        ['Radio', [fmtHz(p.frequency_hz || radio.frequency_hz || meta.freq_hz), fmtBw(p.bandwidth_hz || radio.bandwidth_hz || meta.bw), has(p.spreading_factor || radio.spreading_factor || meta.sf) ? `SF${{p.spreading_factor || radio.spreading_factor || meta.sf}}` : '', has(p.coding_rate || radio.coding_rate) ? `CR4/${{p.coding_rate || radio.coding_rate}}` : ''].filter(Boolean).join(' · ')],
+        ['Signal', [has(p.rssi_dbm) ? `${{p.rssi_dbm}} dBm` : '', has(p.snr_db) ? `${{p.snr_db}} dB SNR` : ''].filter(Boolean).join(' · ')],
+        ['Payload len', p.payload_len ?? p.length ?? meta.size],
+        ['Payload hex', p.payload_hex],
+        ['Payload b64', p.payload_b64],
+        ['Command', p.command_name || p.command],
+        ['Error', p.error],
+      ].filter(([_, v]) => has(v));
+    }}
+    function renderPackets(packets) {{
+      const list = document.getElementById('packet-list');
+      if (!packets.length) {{ list.innerHTML = '<div class="empty">No packet events yet</div>'; return; }}
+      list.innerHTML = packets.slice().reverse().map(p => {{
+        const meta = p.raw_metadata || {{}};
+        const lines = eventLines(p).map(([k, v]) => `<div class="line"><span class="label">${{esc(k)}}</span><span>${{k.includes('Payload') ? `<code>${{esc(v)}}</code>` : esc(v)}}</span></div>`).join('');
+        const decoded = payloadDecodeRows(p, meta).map(([k, v]) => `<div class="line"><span class="label">${{esc(k)}}</span><span><code>${{esc(v)}}</code></span></div>`).join('');
+        const status = p.status || 'event';
+        return `<section class="event"><div class="event-title"><span class="pill">${{esc(p.direction || 'event')}}</span><span class="pill ${{badgeClass(status)}}">${{esc(status)}}</span></div><div class="event-lines">${{lines || '<span class="muted">No details</span>'}}</div>${{decoded ? `<div class="event-lines decoded">${{decoded}}</div>` : ''}}</section>`;
+      }}).join('');
+    }}
+    async function refresh() {{
+      try {{
+        const [status, counters, packets, config] = await Promise.all([
+          getJson('/api/status'), getJson('/api/counters'), getJson('/api/packets'), getJson('/api/config')
+        ]);
+        document.getElementById('node-id').textContent = status.node_id || config.node_id || '{safe_node_id}';
+        const radio = status.radio || status.sx1302 || {{}};
+        const kiss = status.kiss || {{mode: config.kiss?.mode}};
+        const mqtt = status.mqtt || {{connected: status.mqtt_connected}};
+        const sx1302 = radio.sx1302 || {{}};
+        const dbg = sx1302.sx1261_rx_debug || radio.sx1261_rx_debug || status.sx1261_rx_debug || {{}};
+        const noise = sx1302.last_noise_floor ?? radio.last_noise_floor ?? radio.noise_floor_dbm ?? status.last_noise_floor;
+        const txBw = sx1302.hal_bandwidth_hz || radio.hal_bandwidth_hz || radio.bandwidth || radio.bandwidth_hz || radio.bw;
+        const rxBackend = sx1302.rx_backend || radio.rx_backend || (dbg.lora_rx_enabled ? 'sx1261' : '');
+        const radioState = radio.started ? 'started' : (radio.state || 'waiting for SetRadio');
+        const sx1261State = rxBackend === 'sx1261' || dbg.lora_rx_enabled ? 'sx1261' : 'inactive';
+        setBadge('radio-badge', radio.started ? 'started' : (radio.state || 'waiting for SetRadio'));
+        setBadge('overall-badge', radioState);
+        setBadge('sx1261-badge', sx1261State);
+        setBadge('kiss-badge', kiss.mode || 'unknown');
+        setBadge('mqtt-badge', mqtt.connected ? 'connected' : 'disabled/down');
+        renderDl('radio-list', [['Started', radio.started], ['Frequency', fmtHz(radio.frequency || radio.frequency_hz || radio.freq_hz)], ['Configured BW', fmtBw(radio.bandwidth || radio.bandwidth_hz || radio.bw)], ['HAL TX BW', fmtBw(sx1302.hal_bandwidth_hz || radio.hal_bandwidth_hz)], ['HAL BW code', sx1302.hal_bandwidth_code || radio.hal_bandwidth_code], ['RX backend', rxBackend], ['Spreading factor', radio.spreading_factor || radio.sf], ['Coding rate', radio.coding_rate || radio.cr], ['TX power', has(radio.tx_power) ? `${{radio.tx_power}} dBm` : radio.tx_power_dbm], ['Current RSSI', has(radio.current_rssi_dbm) ? `${{radio.current_rssi_dbm}} dBm` : ''], ['Noise floor', has(noise) ? `${{noise}} dBm` : ''], ['Channel busy', radio.channel_busy]]);
+        renderDiag('sx1261-diag', [['LoRa RX enabled', dbg.lora_rx_enabled], ['Poll count', dbg.poll_count], ['Branch count', dbg.sx1261_branch_count], ['RX done', dbg.rx_done_count], ['CRC err', dbg.crc_err_count], ['Header valid', dbg.header_valid_count], ['Header err', dbg.header_err_count], ['Preamble', dbg.preamble_count], ['Sync word', dbg.syncword_count], ['Last IRQ', dbg.last_irq_flags], ['Last RX size', dbg.last_rx_size], ['Fallback count', dbg.sx1302_fallback_count], ['Last scan', sx1302.last_noise_scan_at || radio.last_noise_scan_at], ['Last scan floor', has(noise) ? `${{noise}} dBm` : '']]);
+        renderDl('kiss-list', [['Mode', kiss.mode || config.kiss?.mode], ['PTY symlink', config.kiss?.symlink], ['Serial', config.kiss?.serial_port], ['Baud', config.kiss?.baud_rate], ['MQTT connected', mqtt.connected]]);
+        renderDl('mqtt-list', [['Host', config.mqtt?.host], ['Base topic', config.mqtt?.base_topic], ['Retain status', config.mqtt?.retain_status]]);
+        const c = renderCounters(counters);
+        setSummary('summary-radio', radioState, [rxBackend || 'rx pending', fmtBw(txBw)].filter(Boolean).join(' · '));
+        setSummary('summary-link', fmtHz(radio.frequency || radio.frequency_hz || radio.freq_hz) || '--', [has(radio.spreading_factor || radio.sf) ? `SF${{radio.spreading_factor || radio.sf}}` : '', has(radio.coding_rate || radio.cr) ? `CR4/${{radio.coding_rate || radio.cr}}` : ''].filter(Boolean).join(' · ') || 'not configured');
+        setSummary('summary-packets', `${{c.rx_good_count || 0}} / ${{c.tx_done_count || 0}}`, 'RX good / TX done');
+        setSummary('summary-noise', has(noise) ? `${{noise}} dBm` : '--', has(radio.channel_busy) ? `busy: ${{radio.channel_busy}}` : 'floor');
+        renderConfig(config);
+        renderPackets(packets || []);
+        document.getElementById('updated').textContent = `updated ${{new Date().toLocaleTimeString()}}`;
+      }} catch (err) {{
+        document.getElementById('updated').textContent = `dashboard error: ${{err.message}}`;
+      }}
+    }}
+    function appendLogLine(line) {{
+      const box = document.getElementById('live-logs');
+      if (box.querySelector('.muted')) box.innerHTML = '';
+      const div = document.createElement('div');
+      const s = String(line || '');
+      div.className = 'log-line' + (/\b(error|failed|traceback)\b/i.test(s) ? ' error' : (/\b(warn|timeout)\b/i.test(s) ? ' warn' : ''));
+      div.textContent = s;
+      box.appendChild(div);
+      while (box.children.length > 300) box.removeChild(box.firstChild);
+      box.scrollTop = box.scrollHeight;
+    }}
+    function startLiveLogs() {{
+      const badge = document.getElementById('logs-badge');
+      if (!window.EventSource) {{ badge.textContent = 'unsupported'; badge.className = 'pill bad'; return; }}
+      const source = new EventSource('/api/live-logs');
+      source.onopen = () => {{ badge.textContent = 'live'; badge.className = 'pill good'; }};
+      source.onmessage = (event) => appendLogLine(event.data);
+      source.onerror = () => {{ badge.textContent = 'reconnecting'; badge.className = 'pill warn'; }};
+    }}
+    refresh();
+    startLiveLogs();
+    setInterval(refresh, 2000);
+  </script>
 </body>
 </html>""".encode()
+
 
 
 class DashboardServer:
@@ -322,14 +358,45 @@ class DashboardServer:
                 self.send_header("Cache-Control", "no-store")
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
-                if self.command != "HEAD":
-                    self.wfile.write(body)
+                self.wfile.write(body)
 
             def _json(self, payload: Any, code: int = 200) -> None:
                 self._send(json.dumps(payload, sort_keys=True).encode(), "application/json", code)
 
-            def do_HEAD(self) -> None:
-                self.do_GET()
+            def _live_logs(self) -> None:
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Connection", "keep-alive")
+                self.end_headers()
+                log_path = Path(getattr(outer.config.logging, "live_log_path", "/tmp/sx1302-meshcore-kiss-live.log"))
+                try:
+                    log_path.parent.mkdir(parents=True, exist_ok=True)
+                    log_path.touch(exist_ok=True)
+                    with log_path.open("r", encoding="utf-8", errors="replace") as fh:
+                        fh.seek(0, 2)  # live-only: start at EOF, no historical backlog
+                        last_heartbeat = time.monotonic()
+                        while True:
+                            line = fh.readline()
+                            if line:
+                                clean = line.rstrip("\r\n")
+                                self.wfile.write(f"data: {clean}\n\n".encode())
+                                self.wfile.flush()
+                                last_heartbeat = time.monotonic()
+                                continue
+                            if time.monotonic() - last_heartbeat > 15:
+                                self.wfile.write(b": keepalive\n\n")
+                                self.wfile.flush()
+                                last_heartbeat = time.monotonic()
+                            time.sleep(0.25)
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+                except Exception as exc:
+                    try:
+                        self.wfile.write(f"data: live log stream unavailable: {exc}\n\n".encode())
+                        self.wfile.flush()
+                    except Exception:
+                        pass
 
             def do_GET(self) -> None:
                 path = self.path.split("?", 1)[0]
@@ -338,6 +405,9 @@ class DashboardServer:
                     return
                 if path == "/api/status":
                     self._json({"node_id": outer.config.node_id, **outer.status_provider()})
+                    return
+                if path == "/api/live-logs":
+                    self._live_logs()
                     return
                 if path == "/api/counters":
                     self._json(outer.counters.snapshot(node_id=outer.config.node_id, uptime_seconds=0))
