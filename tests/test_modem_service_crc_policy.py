@@ -14,6 +14,8 @@ from sx1302_meshcore_kiss.kiss.codec import (
     MESHCORE_SUB_GET_STATS,
     MESHCORE_SUB_GET_TX_POWER,
     MESHCORE_SUB_GET_VERSION,
+    MESHCORE_SUB_PING,
+    MESHCORE_SUB_PONG,
     MESHCORE_SUB_RXMETA,
     MESHCORE_SUB_SET_RADIO,
     MESHCORE_SUB_SET_SIGNAL_REPORT,
@@ -160,6 +162,9 @@ async def test_sethardware_stats_version_and_unsupported_errors(service):
         KISS_CMD_SETHARDWARE,
         bytes([MESHCORE_SUB_GET_STATS | 0x80]) + (2).to_bytes(4, "little") + (3).to_bytes(4, "little") + (9).to_bytes(4, "little"),
     )
+
+    assert await service.handle_kiss_frame(KissFrame(KISS_CMD_SETHARDWARE, bytes([MESHCORE_SUB_PING]))) is True
+    assert service.kiss.writes[-1] == (KISS_CMD_SETHARDWARE, bytes([MESHCORE_SUB_PONG]))
 
     assert await service.handle_kiss_frame(KissFrame(KISS_CMD_SETHARDWARE, b"")) is False
     assert service.kiss.writes[-1] == (KISS_CMD_SETHARDWARE, bytes([0xF1, MESHCORE_ERROR_INVALID_LENGTH]))

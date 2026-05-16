@@ -25,6 +25,8 @@ from sx1302_meshcore_kiss.kiss.codec import (
     MESHCORE_SUB_GET_VERSION,
     MESHCORE_SUB_IS_CHANNEL_BUSY,
     MESHCORE_SUB_OK,
+    MESHCORE_SUB_PING,
+    MESHCORE_SUB_PONG,
     MESHCORE_SUB_RXMETA,
     MESHCORE_SUB_SET_RADIO,
     MESHCORE_SUB_SET_SIGNAL_REPORT,
@@ -178,6 +180,9 @@ class ModemService:
             tx = self.counters.tx_done_count
             errors = self.counters.rx_dropped_count + self.counters.tx_error_count
             await self._write_sethardware(MESHCORE_SUB_GET_STATS | 0x80, struct.pack("<III", rx, tx, errors))
+            return True
+        if subcmd == MESHCORE_SUB_PING:
+            await self._write_sethardware(MESHCORE_SUB_PONG)
             return True
         if subcmd == MESHCORE_SUB_SET_SIGNAL_REPORT:
             if len(data) != 1:
