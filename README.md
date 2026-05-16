@@ -66,7 +66,7 @@ Current expected test result on a development machine:
 - Unsupported crypto/device/sensor SetHardware requests return MeshCore error responses instead of being treated as raw KISS commands.
 - PTY endpoint with default symlink `/run/sx1302-meshcore-kiss/sx1302-kiss`.
 - Serial endpoint for real tty devices.
-- Standalone SX1302 adapter around daemon-local `sx1302_meshcore_kiss.sx1302.radio.SX1302Radio`; vanilla pyMC is only a KISS peer.
+- Standalone SX1302 adapter with `semtech_c_hal` backend selection; vanilla pyMC is only a KISS peer.
 - CRC policy inside the KISS daemon/service boundary:
   - `crc_ok=True`: forward to pyMC, MQTT `rx/good`, dashboard event.
   - `crc_ok=False`: drop from pyMC, MQTT `rx/bad_crc`, dashboard event.
