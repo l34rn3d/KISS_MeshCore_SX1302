@@ -177,6 +177,22 @@ function renderCounterBars(c) {
   });
   document.getElementById('counter-bars').innerHTML = rows.join('');
 }
+function renderRuntimeConfig(config) {
+  const radio = config.radio || {};
+  const kiss = config.kiss || {};
+  const rows = [
+    ['Node', config.node_id],
+    ['Frequency', radio.frequency ? `${radio.frequency} Hz` : 'unknown'],
+    ['LoRa mode', `SF${radio.spreading_factor ?? '?'} / ${radio.bandwidth ?? '?'} Hz / CR4/${radio.coding_rate ?? '?'}`],
+    ['Preamble', radio.preamble_len ?? radio.preamble_length ?? 'unknown'],
+    ['Sync word', radio.sync_word ?? 'unknown'],
+    ['KISS mode', kiss.mode ?? 'unknown'],
+    ['KISS endpoint', kiss.symlink || kiss.serial_port || 'unknown'],
+    ['SPI device', radio.spi_device || radio.com_path || 'unknown'],
+    ['Backend', radio.backend || 'unknown'],
+  ];
+  document.getElementById('runtime-config').innerHTML = rows.map(([k, v]) => `<div class="mini"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div></div>`).join('');
+}
 async function refresh() {
   try {
     const [status, counters, packets, config] = await Promise.all([
@@ -202,7 +218,7 @@ async function refresh() {
     setPanel('mqtt', status.mqtt || {connected: status.mqtt_connected ?? false});
     setPanel('kiss', status.kiss || {mode: config.kiss?.mode || 'unknown'});
     setText('counters-json', fmtJson(counters.counters || counters));
-    setText('config-json', fmtJson(config));
+    renderRuntimeConfig(config);
     renderCounterBars(c);
     renderPackets(packets || []);
   } catch (err) {
@@ -273,7 +289,7 @@ def _dashboard_html(node_id: str) -> bytes:
           <h3>Latest packet events <span class="pill">live ring buffer</span></h3>
           <div class="table-wrap"><table aria-label="Latest packet events"><thead><tr><th>Time</th><th>Dir</th><th>Status</th><th>Len</th><th>RF</th><th>RSSI / SNR</th><th>payload_hex</th></tr></thead><tbody id="packet-rows"><tr><td colspan="7" class="muted">Loading packet events…</td></tr></tbody></table></div>
         </article>
-        <article class="card full" id="config"><h3>Active config <span class="pill">secrets redacted</span></h3><pre id="config-json">Loading config…</pre></article>
+        <article class="card full" id="config"><h3>Runtime config <span class="pill">focused view</span></h3><div class="metrics-row" id="runtime-config"><div class="mini"><div class="k">Loading</div><div class="v">config…</div></div></div></article>
       </section>
     </main>
   </div>
