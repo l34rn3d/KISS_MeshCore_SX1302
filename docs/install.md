@@ -26,9 +26,8 @@ Enable SPI in the board firmware/config before starting the service.
 ```bash
 sudo mkdir -p /opt
 cd /opt
-sudo git clone https://github.com/l34rn3d/KISS_MeshCore_SX1302.git sx1302-meshcore-kiss
+sudo git clone --branch semtech-driver --single-branch https://github.com/l34rn3d/KISS_MeshCore_SX1302.git sx1302-meshcore-kiss
 cd /opt/sx1302-meshcore-kiss
-sudo git checkout semtech-driver
 ```
 
 If deploying from an already downloaded source tree instead of GitHub, copy that tree to:

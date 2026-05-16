@@ -87,9 +87,8 @@ Current expected test result on a development machine:
 Full install/service notes are in [`docs/install.md`](docs/install.md). The short path is:
 
 ```bash
-git clone https://github.com/l34rn3d/KISS_MeshCore_SX1302.git sx1302-meshcore-kiss
+git clone --branch semtech-driver --single-branch https://github.com/l34rn3d/KISS_MeshCore_SX1302.git sx1302-meshcore-kiss
 cd sx1302-meshcore-kiss
-git checkout semtech-driver
 uv venv .venv
 . .venv/bin/activate
 uv pip install -e '.[dev]'
