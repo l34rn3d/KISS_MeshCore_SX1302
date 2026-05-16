@@ -113,7 +113,11 @@ remove_systemd_service() {
   fi
 
   run systemctl daemon-reload
-  run systemctl reset-failed "${SERVICE_NAME}"
+  if [[ ${DRY_RUN} -eq 1 ]]; then
+    run systemctl reset-failed "${SERVICE_NAME}"
+  else
+    systemctl reset-failed "${SERVICE_NAME}" 2>/dev/null || true
+  fi
 }
 
 remove_install_dir() {
