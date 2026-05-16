@@ -48,13 +48,15 @@ Semtech-style lgw_receive path
 
 ## Runtime radio configuration
 
-Daemon config provides startup hardware settings:
+Daemon config provides startup hardware and known-good SenseCAP/WM1302 radio baseline settings:
 
-- SPI device path;
-- GPIO chip and reset/power pins;
+- Semtech C HAL backend and library path;
+- SPI device paths for SX1302 and SX1261 (`/dev/spidev0.0`, `/dev/spidev0.1`);
+- GPIO chip and reset/power pins matching the working cricket deployment (`23/22` resets);
+- MeshCore sync-word/LBT/CRC defaults matching cricket;
 - duty-cycle policy.
 
-RF parameters in config are fallback/default state only. In the normal pyMC_Repeater KISS deployment, the host sends live radio settings after connect:
+pyMC can still override live frequency, bandwidth, spreading factor, coding rate, and TX power after connect:
 
 - `SetRadio 0x09`: frequency, bandwidth, spreading factor, coding rate;
 - `SetTxPower 0x0A`: TX power;

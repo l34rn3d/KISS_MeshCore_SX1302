@@ -18,7 +18,16 @@ def test_load_config_defaults_to_network_dashboard_and_pty(tmp_path):
     assert config.kiss.symlink == "/run/sx1302-meshcore-kiss/sx1302-kiss"
     assert config.dashboard.bind_host == "0.0.0.0"
     assert config.dashboard.max_packet_events == 50
-    assert config.crc.forward_unknown_crc is False
+    assert config.crc.forward_unknown_crc is True
+    assert config.crc.publish_bad_crc_payload is False
+    assert config.mqtt.enabled is False
+    assert config.radio.frequency_hz == 915_075_000
+    assert config.radio.spreading_factor == 9
+    assert config.radio.tx_power_dbm == 26
+    assert config.radio.sync_word == 5156
+    assert config.radio.sx1261_spi_path == "/dev/spidev0.1"
+    assert config.radio.sx1302_reset_pin == 23
+    assert config.radio.sx1261_reset_pin == 22
 
 
 def test_redact_config_hides_mqtt_password_and_keeps_payload_flags():

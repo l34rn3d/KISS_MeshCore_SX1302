@@ -16,13 +16,13 @@ class KissConfig:
 
 @dataclass
 class CrcConfig:
-    forward_unknown_crc: bool = False
-    publish_bad_crc_payload: bool = True
-    dashboard_show_bad_crc_payload: bool = True
+    forward_unknown_crc: bool = True
+    publish_bad_crc_payload: bool = False
+    dashboard_show_bad_crc_payload: bool = False
 
 @dataclass
 class MqttConfig:
-    enabled: bool = True
+    enabled: bool = False
     host: str = "127.0.0.1"
     port: int = 1883
     username: str = ""

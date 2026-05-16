@@ -101,7 +101,7 @@ sudo editor /etc/sx1302-meshcore-kiss/config.yaml
 sudo systemctl start sx1302-meshcore-kiss.service
 ```
 
-Edit only the board-specific SX1302 settings before starting, especially SPI/GPIO reset pins. The dashboard listens on `0.0.0.0:8080` by default, so after start it should be reachable at:
+The included default config is now based on the known-good `cricket` SenseCAP/WM1302 deployment: Semtech C HAL backend, `/dev/spidev0.0` + `/dev/spidev0.1`, reset pins `23/22`, sync word `5156`, LBT enabled, MQTT disabled, and CRC policy matching cricket. Only change identity/location or board-specific values if this device is genuinely wired differently. The dashboard listens on `0.0.0.0:8080` by default, so after start it should be reachable at:
 
 ```text
 http://<device-ip>:8080/
@@ -121,10 +121,19 @@ Install pyMC_Repeater using its normal installer/instructions, then edit its con
 sudo editor /etc/pymc_repeater/config.yaml
 ```
 
-Set pyMC_Repeater to KISS mode and point it at the SX1302 bridge device path:
+Set pyMC_Repeater to KISS mode, point it at the SX1302 bridge device path, and use the same MeshCore radio/path-hash values as cricket:
 
 ```yaml
 radio_type: kiss
+mesh:
+  path_hash_mode: 1
+radio:
+  frequency: 915075000
+  bandwidth: 125000
+  spreading_factor: 9
+  coding_rate: 5
+  sync_word: 13380
+  tx_power: 26
 kiss:
   port: "/run/sx1302-meshcore-kiss/sx1302-kiss"
   baud_rate: 115200
@@ -192,18 +201,30 @@ sudo cp config.example.yaml /etc/sx1302-meshcore-kiss/config.yaml
 sudo editor /etc/sx1302-meshcore-kiss/config.yaml
 ```
 
-Set only the board-specific hardware values in `radio:`. Frequency, bandwidth, spreading factor, coding rate, and TX power do not need to be pre-set for normal pyMC use because pyMC sends them at runtime with MeshCore `SetRadio` / `SetTxPower` KISS radio commands.
+The packaged `config.example.yaml` is a SenseCAP/WM1302 baseline copied from the known-good cricket deployment, except it keeps the safer `/run/sx1302-meshcore-kiss/sx1302-kiss` KISS path instead of cricket's older `/tmp` path. Key defaults are:
 
 ```yaml
 radio:
+  backend: "semtech_c_hal"
+  c_hal_lib: "/opt/sx1302-meshcore-kiss/build/c_hal/libmeshcore_lgw.so"
+  frequency_hz: 915075000
+  bandwidth_hz: 125000
+  spreading_factor: 9
+  tx_power_dbm: 26
+  sync_word: 5156
   spi_device: "/dev/spidev0.0"
-  reset_enabled: true
-  gpio_chip: "gpiochip0"
-  power_enable_pin: 18
-  sx1302_reset_pin: 17
-  sx1261_reset_pin: 5
-  adc_reset_pin: 13
+  sx1261_spi_path: "/dev/spidev0.1"
+  sx1302_reset_pin: 23
+  sx1261_reset_pin: 22
+  lbt_enabled: true
+crc:
+  forward_unknown_crc: true
+  publish_bad_crc_payload: false
+mqtt:
+  enabled: false
 ```
+
+Change only identity/location or hardware pins if the target board is genuinely wired differently. Do **not** replace those values with the old generic `915000000/SF8/null SX1261` defaults; that was what made coffee look active while not behaving like cricket.
 
 Install and start the service:
 
@@ -228,6 +249,15 @@ For existing installs, change both sides to the same device path:
 
 ```yaml
 radio_type: kiss
+mesh:
+  path_hash_mode: 1
+radio:
+  frequency: 915075000
+  bandwidth: 125000
+  spreading_factor: 9
+  coding_rate: 5
+  sync_word: 13380
+  tx_power: 26
 kiss:
   port: "/run/sx1302-meshcore-kiss/sx1302-kiss"
   baud_rate: 115200

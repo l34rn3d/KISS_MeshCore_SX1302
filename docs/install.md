@@ -33,7 +33,7 @@ sudo editor /etc/sx1302-meshcore-kiss/config.yaml
 sudo systemctl start sx1302-meshcore-kiss.service
 ```
 
-Edit only the board-specific SX1302 settings before starting, especially SPI/GPIO reset pins. The dashboard listens on `0.0.0.0:8080` by default, so after start it should be reachable at:
+The included default config is now based on the known-good `cricket` SenseCAP/WM1302 deployment: Semtech C HAL backend, `/dev/spidev0.0` + `/dev/spidev0.1`, reset pins `23/22`, sync word `5156`, LBT enabled, MQTT disabled, and CRC policy matching cricket. Only change identity/location or board-specific values if this device is genuinely wired differently. The dashboard listens on `0.0.0.0:8080` by default, so after start it should be reachable at:
 
 ```text
 http://<device-ip>:8080/
@@ -53,10 +53,19 @@ Install pyMC_Repeater using its normal installer/instructions, then edit its con
 sudo editor /etc/pymc_repeater/config.yaml
 ```
 
-Set pyMC_Repeater to KISS mode and point it at the SX1302 bridge device path:
+Set pyMC_Repeater to KISS mode, point it at the SX1302 bridge device path, and use the same MeshCore radio/path-hash values as cricket:
 
 ```yaml
 radio_type: kiss
+mesh:
+  path_hash_mode: 1
+radio:
+  frequency: 915075000
+  bandwidth: 125000
+  spreading_factor: 9
+  coding_rate: 5
+  sync_word: 13380
+  tx_power: 26
 kiss:
   port: "/run/sx1302-meshcore-kiss/sx1302-kiss"
   baud_rate: 115200
@@ -182,30 +191,39 @@ Set at least:
 
 - `kiss.mode`, usually `pty`;
 - `kiss.symlink`, usually `/run/sx1302-meshcore-kiss/sx1302-kiss`;
-- `radio.spi_device`, usually `/dev/spidev0.0`;
 - `dashboard.bind_host`, default `0.0.0.0` for Tailscale/LAN access; use `127.0.0.1` if you want local-only dashboard access;
-- reset GPIO chip and pin numbers for the exact WM1302/SX1302 board;
-- MQTT host/credentials only if MQTT is enabled.
+- `node_id` and MQTT client/topic names for the individual repeater identity;
+- only change reset GPIO/SPI values if the target is not wired like the known-good cricket SenseCAP/WM1302.
 
-The initial `radio.frequency_hz`, `bandwidth_hz`, `spreading_factor`, `coding_rate`, and `tx_power_dbm` values are only daemon fallback/default state. For the normal pyMC_Repeater KISS path, pyMC sends the live radio settings after connect with MeshCore `SetRadio 0x09` and `SetTxPower 0x0A`, so deployment instructions should not rely on hard-coding those initial RF values.
-
-Example hardware-focused radio block:
+The default radio block is intentionally cricket-aligned. Do **not** swap it back to the old generic fallback values.
 
 ```yaml
 radio:
+  backend: "semtech_c_hal"
+  c_hal_lib: "/opt/sx1302-meshcore-kiss/build/c_hal/libmeshcore_lgw.so"
+  frequency_hz: 915075000
+  bandwidth_hz: 125000
+  spreading_factor: 9
+  tx_power_dbm: 26
+  sync_word: 5156
   spi_device: "/dev/spidev0.0"
-  sx1261_spi_path: null
+  sx1261_spi_path: "/dev/spidev0.1"
   reset_enabled: true
   reset_required: false
   gpio_chip: "gpiochip0"
   power_enable_pin: 18
-  sx1302_reset_pin: 17
-  sx1261_reset_pin: 5
+  sx1302_reset_pin: 23
+  sx1261_reset_pin: 22
   adc_reset_pin: 13
-  duty_cycle_enforcement: "raise"
+  lbt_enabled: true
+crc:
+  forward_unknown_crc: true
+  publish_bad_crc_payload: false
+mqtt:
+  enabled: false
 ```
 
-Do not commit real MQTT passwords or other secrets. Use `[REDACTED]` in notes and logs.
+pyMC will still send live `SetRadio 0x09` and `SetTxPower 0x0A` values after it connects, but the bridge must start from the same HAL/SPI/GPIO/SX1261/sync-word baseline as cricket.
 
 ## 6. Install systemd service
 
@@ -239,6 +257,15 @@ For existing installs, change both sides to the same device path:
 
 ```yaml
 radio_type: kiss
+mesh:
+  path_hash_mode: 1
+radio:
+  frequency: 915075000
+  bandwidth: 125000
+  spreading_factor: 9
+  coding_rate: 5
+  sync_word: 13380
+  tx_power: 26
 kiss:
   port: "/run/sx1302-meshcore-kiss/sx1302-kiss"
   baud_rate: 115200

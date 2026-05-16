@@ -1,47 +1,59 @@
-node_id: "repeater-01"
+node_id: "pyRpt-node"
 
 kiss:
   mode: "pty"                 # pty | serial
+  # Keep this outside /tmp so pyMC can open it even when the bridge and pyMC run as different users.
   symlink: "/run/sx1302-meshcore-kiss/sx1302-kiss"
   serial_port: "/dev/ttyUSB0"
   baud_rate: 115200
   tcp_bind: "127.0.0.1"
   tcp_port: 8001
 
+# SenseCAP/WM1302 baseline matching the known-good "cricket" deployment.
+# pyMC may still send live SetRadio/SetTxPower values after KISS connect.
 radio:
-  frequency_hz: 915000000
-  bandwidth_hz: 125000        # 62500 experimental trick mode is supported by the daemon SX1302 backend
-  spreading_factor: 8
+  backend: "semtech_c_hal"
+  c_hal_lib: "/opt/sx1302-meshcore-kiss/build/c_hal/libmeshcore_lgw.so"
+  lorawan_public: false
+  frequency_hz: 915075000
+  bandwidth_hz: 125000
+  spreading_factor: 9
   coding_rate: 5
-  tx_power_dbm: 14
+  tx_power_dbm: 26
   preamble_len: 17
-  sync_word: null
+  sync_word: 5156
   implicit_header: false
   invert_iq: false
   spi_device: "/dev/spidev0.0"
-  sx1261_spi_path: null
+  sx1261_spi_path: "/dev/spidev0.1"
   reset_enabled: true
   reset_required: false
+  reset_script_path: "/opt/sx1302-meshcore-kiss/tools/reset_wm1302_pinctrl.sh"
   gpio_chip: "gpiochip0"
   power_enable_pin: 18
-  sx1302_reset_pin: 17
-  sx1261_reset_pin: 5
+  sx1302_reset_pin: 23
+  sx1261_reset_pin: 22
   adc_reset_pin: 13
   duty_cycle_enforcement: "raise"
+  lbt_enabled: true
+  lbt_rssi_threshold_dbm: null
+  lbt_max_attempts: 3
+  lbt_backoff_ms: 50
+  lbt_cad_timeout_ms: 500
 
 crc:
-  forward_unknown_crc: false
-  publish_bad_crc_payload: true
-  dashboard_show_bad_crc_payload: true
+  forward_unknown_crc: true
+  publish_bad_crc_payload: false
+  dashboard_show_bad_crc_payload: false
 
 mqtt:
-  enabled: true
+  enabled: false
   host: "127.0.0.1"
   port: 1883
   username: ""
   password: ""
-  client_id: "sx1302-meshcore-kiss-repeater-01"
-  base_topic: "meshcore/sx1302/repeater-01"
+  client_id: "sx1302-meshcore-kiss-pyRpt-node"
+  base_topic: "meshcore/sx1302/pyRpt-node"
   qos_events: 0
   qos_status: 1
   retain_status: true
