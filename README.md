@@ -102,15 +102,10 @@ sudo cp config.example.yaml /etc/sx1302-meshcore-kiss/config.yaml
 sudo editor /etc/sx1302-meshcore-kiss/config.yaml
 ```
 
-Set board-specific values in `radio:`:
+Set only the board-specific hardware values in `radio:`. Frequency, bandwidth, spreading factor, coding rate, and TX power do not need to be pre-set for normal pyMC use because pyMC sends them at runtime with MeshCore `SetRadio` / `SetTxPower` KISS radio commands.
 
 ```yaml
 radio:
-  frequency_hz: 915000000
-  bandwidth_hz: 125000
-  spreading_factor: 8
-  coding_rate: 5
-  tx_power_dbm: 14
   spi_device: "/dev/spidev0.0"
   reset_enabled: true
   gpio_chip: "gpiochip0"

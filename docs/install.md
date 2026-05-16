@@ -82,23 +82,15 @@ Set at least:
 - `kiss.mode`, usually `pty`;
 - `kiss.symlink`, usually `/tmp/sx1302-kiss`;
 - `radio.spi_device`, usually `/dev/spidev0.0`;
-- `radio.frequency_hz`, `bandwidth_hz`, `spreading_factor`, `coding_rate`, and `tx_power_dbm`;
 - reset GPIO chip and pin numbers for the exact WM1302/SX1302 board;
 - MQTT host/credentials only if MQTT is enabled.
 
-Example radio block:
+The initial `radio.frequency_hz`, `bandwidth_hz`, `spreading_factor`, `coding_rate`, and `tx_power_dbm` values are only daemon fallback/default state. For the normal pyMC_Repeater KISS path, pyMC sends the live radio settings after connect with MeshCore `SetRadio 0x09` and `SetTxPower 0x0A`, so deployment instructions should not rely on hard-coding those initial RF values.
+
+Example hardware-focused radio block:
 
 ```yaml
 radio:
-  frequency_hz: 915000000
-  bandwidth_hz: 125000
-  spreading_factor: 8
-  coding_rate: 5
-  tx_power_dbm: 14
-  preamble_len: 17
-  sync_word: null
-  implicit_header: false
-  invert_iq: false
   spi_device: "/dev/spidev0.0"
   sx1261_spi_path: null
   reset_enabled: true

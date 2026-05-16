@@ -48,14 +48,13 @@ Semtech-style lgw_receive path
 
 ## Runtime radio configuration
 
-Daemon config provides startup/default hardware settings:
+Daemon config provides startup hardware settings:
 
 - SPI device path;
 - GPIO chip and reset/power pins;
-- default frequency, bandwidth, spreading factor, coding rate, TX power;
 - duty-cycle policy.
 
-MeshCore KISS SetHardware commands can update runtime radio state after the host connects:
+RF parameters in config are fallback/default state only. In the normal pyMC_Repeater KISS deployment, the host sends live radio settings after connect:
 
 - `SetRadio 0x09`: frequency, bandwidth, spreading factor, coding rate;
 - `SetTxPower 0x0A`: TX power;
