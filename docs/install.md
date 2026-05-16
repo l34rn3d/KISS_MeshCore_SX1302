@@ -107,7 +107,7 @@ cd sx1302-meshcore-kiss
 sudo ./scripts/install.sh
 ```
 
-The script installs prerequisites, copies the tracked source to `/opt/sx1302-meshcore-kiss`, creates the `sx1302kiss` service user, builds the venv, creates `/etc/sx1302-meshcore-kiss/config.yaml` if missing, installs/enables the systemd unit, and runs a basic import/help verification. It does **not** start the daemon unless you pass `--start` so board-specific GPIO/SPI config can be edited first.
+The script installs prerequisites, copies the tracked source to `/opt/sx1302-meshcore-kiss`, creates the `sx1302kiss` service user, builds the venv, builds the cricket-style Semtech C HAL bridge at `/opt/sx1302-meshcore-kiss/build/c_hal/libmeshcore_lgw.so`, creates `/etc/sx1302-meshcore-kiss/config.yaml` if missing, installs/enables the systemd unit, and runs a basic import/help verification. It does **not** start the daemon unless you pass `--start` so board-specific GPIO/SPI config can be edited first.
 
 Useful installer options:
 
@@ -195,21 +195,18 @@ Set at least:
 - `node_id` and MQTT client/topic names for the individual repeater identity;
 - only change reset GPIO/SPI values if the target is not wired like the known-good cricket SenseCAP/WM1302.
 
-The default radio block is intentionally cricket-aligned. Do **not** swap it back to the old generic fallback values.
+The default bridge radio block is intentionally cricket-aligned for backend/hardware/reset policy. Do **not** swap it back to the old generic fallback values. RF channel values are intentionally owned by pyMC over MeshCore KISS `SetRadio 0x09` and `SetTxPower 0x0A`.
 
 ```yaml
 radio:
   backend: "semtech_c_hal"
   c_hal_lib: "/opt/sx1302-meshcore-kiss/build/c_hal/libmeshcore_lgw.so"
-  frequency_hz: 915075000
-  bandwidth_hz: 125000
-  spreading_factor: 9
-  tx_power_dbm: 26
   sync_word: 5156
   spi_device: "/dev/spidev0.0"
   sx1261_spi_path: "/dev/spidev0.1"
   reset_enabled: true
   reset_required: false
+  reset_script_path: "/opt/sx1302-meshcore-kiss/tools/reset_wm1302_pinctrl.sh"
   gpio_chip: "gpiochip0"
   power_enable_pin: 18
   sx1302_reset_pin: 23
@@ -221,9 +218,11 @@ crc:
   publish_bad_crc_payload: false
 mqtt:
   enabled: false
+dashboard:
+  bind_host: "0.0.0.0"
 ```
 
-pyMC will still send live `SetRadio 0x09` and `SetTxPower 0x0A` values after it connects, but the bridge must start from the same HAL/SPI/GPIO/SX1261/sync-word baseline as cricket.
+Use the pyMC snippet below for the live MeshCore RF values: `915075000`, BW125, SF9, CR4/5, sync word `13380`, TX power `26`.
 
 ## 6. Install systemd service
 

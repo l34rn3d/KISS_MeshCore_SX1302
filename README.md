@@ -175,7 +175,7 @@ cd sx1302-meshcore-kiss
 sudo ./scripts/install.sh
 ```
 
-The installer sets up apt prerequisites, `/opt/sx1302-meshcore-kiss`, the `sx1302kiss` service user, a venv, `/etc/sx1302-meshcore-kiss/config.yaml`, and the systemd unit. It enables the service but does not start it unless you pass `--start`, so you can edit board-specific GPIO/SPI settings first.
+The installer sets up apt prerequisites, `/opt/sx1302-meshcore-kiss`, the `sx1302kiss` service user, a venv, builds the cricket-style Semtech C HAL bridge at `/opt/sx1302-meshcore-kiss/build/c_hal/libmeshcore_lgw.so`, creates `/etc/sx1302-meshcore-kiss/config.yaml`, and installs the systemd unit. It enables the service but does not start it unless you pass `--start`, so you can edit board-specific GPIO/SPI settings first.
 
 To remove the service later, use the cleanup helper. It is dry-run by default and prints exactly what it would remove; pass `--yes` to actually stop/disable the service and remove the installed app directory. Config is kept unless `--purge-config` is provided.
 
@@ -201,19 +201,18 @@ sudo cp config.example.yaml /etc/sx1302-meshcore-kiss/config.yaml
 sudo editor /etc/sx1302-meshcore-kiss/config.yaml
 ```
 
-The packaged `config.example.yaml` is a SenseCAP/WM1302 baseline copied from the known-good cricket deployment, except it keeps the safer `/run/sx1302-meshcore-kiss/sx1302-kiss` KISS path instead of cricket's older `/tmp` path. Key defaults are:
+The packaged `config.example.yaml` is a SenseCAP/WM1302 baseline copied from the known-good cricket deployment, except it keeps the safer `/run/sx1302-meshcore-kiss/sx1302-kiss` KISS path instead of cricket's older `/tmp` path. The bridge config owns hardware/backend/reset/dashboard policy; pyMC sends live RF values over MeshCore KISS `SetRadio` / `SetTxPower` after it connects.
+
+Key bridge defaults are:
 
 ```yaml
 radio:
   backend: "semtech_c_hal"
   c_hal_lib: "/opt/sx1302-meshcore-kiss/build/c_hal/libmeshcore_lgw.so"
-  frequency_hz: 915075000
-  bandwidth_hz: 125000
-  spreading_factor: 9
-  tx_power_dbm: 26
   sync_word: 5156
   spi_device: "/dev/spidev0.0"
   sx1261_spi_path: "/dev/spidev0.1"
+  reset_script_path: "/opt/sx1302-meshcore-kiss/tools/reset_wm1302_pinctrl.sh"
   sx1302_reset_pin: 23
   sx1261_reset_pin: 22
   lbt_enabled: true
@@ -222,9 +221,11 @@ crc:
   publish_bad_crc_payload: false
 mqtt:
   enabled: false
+dashboard:
+  bind_host: "0.0.0.0"
 ```
 
-Change only identity/location or hardware pins if the target board is genuinely wired differently. Do **not** replace those values with the old generic `915000000/SF8/null SX1261` defaults; that was what made coffee look active while not behaving like cricket.
+Do **not** add the old generic `915000000/SF8/null SX1261` values to the bridge config. Use the pyMC snippet above for the MeshCore RF settings: `915075000`, BW125, SF9, CR4/5, sync word `13380`, TX power `26`.
 
 Install and start the service:
 

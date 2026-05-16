@@ -1,7 +1,7 @@
 node_id: "pyRpt-node"
 
 kiss:
-  mode: "pty"                 # pty | serial
+  mode: "pty"
   # Keep this outside /tmp so pyMC can open it even when the bridge and pyMC run as different users.
   symlink: "/run/sx1302-meshcore-kiss/sx1302-kiss"
   serial_port: "/dev/ttyUSB0"
@@ -9,17 +9,13 @@ kiss:
   tcp_bind: "127.0.0.1"
   tcp_port: 8001
 
-# SenseCAP/WM1302 baseline matching the known-good "cricket" deployment.
-# pyMC may still send live SetRadio/SetTxPower values after KISS connect.
 radio:
   backend: "semtech_c_hal"
   c_hal_lib: "/opt/sx1302-meshcore-kiss/build/c_hal/libmeshcore_lgw.so"
   lorawan_public: false
-  frequency_hz: 915075000
-  bandwidth_hz: 125000
-  spreading_factor: 9
-  coding_rate: 5
-  tx_power_dbm: 26
+  # RF channel settings are intentionally not configured here. The KISS host
+  # must send MeshCore SetRadio/SetTxPower, and the daemon applies those at
+  # runtime before TX/RX starts. Known-good pyMC values are documented below.
   preamble_len: 17
   sync_word: 5156
   implicit_header: false
@@ -72,3 +68,4 @@ dashboard:
 logging:
   level: "INFO"
   log_raw_payloads: false
+  live_log_path: "/run/sx1302-meshcore-kiss/live.log"

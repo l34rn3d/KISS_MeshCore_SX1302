@@ -169,7 +169,7 @@ async def test_sethardware_stats_version_and_unsupported_errors(service):
     assert await service.handle_kiss_frame(KissFrame(KISS_CMD_SETHARDWARE, b"")) is False
     assert service.kiss.writes[-1] == (KISS_CMD_SETHARDWARE, bytes([0xF1, MESHCORE_ERROR_INVALID_LENGTH]))
 
-    assert await service.handle_kiss_frame(KissFrame(KISS_CMD_SETHARDWARE, bytes([0x01]))) is False
+    assert await service.handle_kiss_frame(KissFrame(KISS_CMD_SETHARDWARE, bytes([0x03]))) is False
     assert service.kiss.writes[-1] == (KISS_CMD_SETHARDWARE, bytes([0xF1, MESHCORE_ERROR_NO_CALLBACK]))
 
     assert await service.handle_kiss_frame(KissFrame(KISS_CMD_SETHARDWARE, bytes([0x7E]))) is False
@@ -218,7 +218,7 @@ async def test_bad_crc_rx_is_not_forwarded_but_reported(service):
 
 @pytest.mark.asyncio
 async def test_unknown_crc_rx_drops_by_default_and_can_be_forwarded_for_lab_debug(service):
-    pkt = RxPacket(payload=b"maybe", crc_ok=None, frequency_hz=None, bandwidth_hz=None, spreading_factor=None, coding_rate=None, rssi_dbm=None, snr_db=None, channel=None, concentrator_timestamp_us=None, raw_metadata={})
+    pkt = RxPacket(payload=b"maybe", crc_ok=None, frequency_hz=None, bandwidth_hz=None, spreading_factor=None, coding_rate=None, rssi_dbm=None, snr_db=None, channel=None, concentrator_timestamp_us=None, raw_metadata={"rx_backend": "sx1261"})
 
     assert await service.handle_rx_packet(pkt) is False
     assert service.kiss.writes == []

@@ -6,33 +6,34 @@ from typing import Any, Optional
 
 @dataclass
 class RadioConfig:
-    # Defaults match the known-good SenseCAP/WM1302 "cricket" deployment.
-    # pyMC may still override frequency/SF/BW/CR/TX power at runtime over KISS.
-    backend: str = "semtech_c_hal"
-    c_hal_lib: str = "/opt/sx1302-meshcore-kiss/build/c_hal/libmeshcore_lgw.so"
-    lorawan_public: bool = False
-    frequency_hz: int = 915_075_000
-    bandwidth_hz: int = 125_000
-    spreading_factor: int = 9
-    coding_rate: int = 5
-    tx_power_dbm: int = 26
+    # RF settings are intentionally unset until the host sends MeshCore KISS
+    # SetRadio/SetTxPower. The daemon config owns hardware/endpoint settings,
+    # not channel parameters.
+    frequency_hz: Optional[int] = None
+    bandwidth_hz: Optional[int] = None
+    spreading_factor: Optional[int] = None
+    coding_rate: Optional[int] = None
+    tx_power_dbm: Optional[int] = None
     preamble_len: Optional[int] = 17
-    sync_word: Optional[int] = 5156
+    sync_word: Optional[int] = None
     implicit_header: bool = False
     invert_iq: bool = False
     spi_device: str = "/dev/spidev0.0"
-    sx1261_spi_path: Optional[str] = "/dev/spidev0.1"
+    backend: str = "python"
+    c_hal_lib: Optional[str] = None
+    lorawan_public: bool = False
+    sx1261_spi_path: Optional[str] = None
     reset_enabled: bool = True
     reset_required: bool = False
-    reset_script_path: str = "/opt/sx1302-meshcore-kiss/tools/reset_wm1302_pinctrl.sh"
     gpio_chip: str = "gpiochip0"
+    reset_script_path: Optional[str] = None
     power_enable_pin: Optional[int] = 18
-    sx1302_reset_pin: Optional[int] = 23
-    sx1261_reset_pin: Optional[int] = 22
+    sx1302_reset_pin: Optional[int] = 17
+    sx1261_reset_pin: Optional[int] = 5
     adc_reset_pin: Optional[int] = 13
     duty_cycle_enforcement: str = "raise"
-    lbt_enabled: bool = True
-    lbt_rssi_threshold_dbm: Optional[float] = None
+    lbt_enabled: bool = False
+    lbt_rssi_threshold_dbm: Optional[int] = None
     lbt_max_attempts: int = 3
     lbt_backoff_ms: int = 50
     lbt_cad_timeout_ms: int = 500

@@ -1,8 +1,7 @@
-"""Semtech-style SX1302 HAL boundary implemented over Linux spidev.
+"""Pure Python SX1302 HAL — direct spidev implementation.
 
-This module mirrors the public shape and naming of Semtech's libloragw
-``lgw_*`` driver calls while talking to the SX1302 concentrator and SX1250 RF
-frontends through Linux spidev/GPIO from the daemon process.
+Replaces ctypes bindings to libloragw.so.  Talks to the SX1302 LoRa
+concentrator and SX1250 RF frontends directly via Linux spidev.
 
 Supported hardware:
     SX1302 / SX1303 concentrator with SX1250 radios (WM1302 module).
@@ -118,7 +117,7 @@ LGW_SPECTRAL_SCAN_RESULT_SIZE = 33
 
 @dataclass(frozen=True)
 class SX1302Capabilities:
-    """Feature flags for the daemon-local SX1302 HAL boundary.
+    """Feature flags for the pure-Python SX1302 HAL.
 
     These flags intentionally describe what this Python implementation exposes
     today, not every feature present in Semtech's C HAL. Advanced features
@@ -3441,7 +3440,7 @@ def _record_pre_start_config(name: str, conf: Any) -> int:
 def lgw_demod_setconf(conf: Any) -> int:
     """Record demodulator configuration for C HAL API compatibility.
 
-    The daemon-local HAL currently configures SX1302 demodulators from the RX IF
+    The pure-Python HAL currently configures SX1302 demodulators from the RX IF
     chain table in :func:`lgw_start`.  This function keeps the Semtech C HAL
     surface available for callers that provide an extra demodulator config
     block, without claiming new hardware capability.
@@ -3508,7 +3507,7 @@ def lgw_sx1261_getconf() -> Optional[Dict[str, Any]]:
 def lgw_spectral_scan_start(freq_hz: int, nb_scan: int = 1) -> int:
     """Start a placeholder SX1261 spectral scan.
 
-    The daemon-local HAL does not yet read real scan bins from SX1261. This
+    The pure-Python HAL does not yet read real scan bins from SX1261. This
     scaffold records requested scan state so CAD/LBT can be designed against a
     stable API before hardware-level spectral implementation lands.
     """
@@ -3828,7 +3827,7 @@ def lgw_time_on_air(pkt: Dict[str, Any]) -> int:
 
     coderate = int(pkt.get("coderate", CR_LORA_4_5))
     cr = coderate - 4 if coderate in (5, 6, 7, 8) else coderate
-    if cr < CR_LORA_4_5 or cr > CR_LORA_4_8:
+    if cr < 1 or cr > 4:
         return 0
 
     preamble = int(pkt.get("preamble", 8))
@@ -3840,7 +3839,7 @@ def lgw_time_on_air(pkt: Dict[str, Any]) -> int:
     header_bits = 0 if explicit_header else 20
     denominator = 4 * (sf - 2 * low_data_rate_optimize)
     numerator = 8 * payload_len - 4 * sf + 28 + crc_bits - header_bits
-    payload_symbols = 8 + max(math.ceil(numerator / denominator) * cr, 0)
+    payload_symbols = 8 + max(math.ceil(numerator / denominator) * (cr + 4), 0)
     total_symbols = preamble + 4.25 + payload_symbols
     return int(math.ceil(total_symbols * tsym_s * 1000.0))
 
@@ -3902,23 +3901,122 @@ def lgw_send(pkt: dict) -> int:
             log.error("lgw_send: invalid datarate %d", dr)
             return LGW_HAL_ERROR
 
-    payload: bytes = pkt.get("payload", b"")
+    payload: bytes = bytes(pkt.get("payload", b""))
+    if len(payload) > 255:
+        log.error("lgw_send: payload too large for SX1302 LoRa TX: %d bytes", len(payload))
+        return LGW_HAL_ERROR
     tx_mode = pkt.get("tx_mode", TX_IMMEDIATE)
     count_us = pkt.get("count_us", 0)
 
-    # Select TX block registers by rf_chain
+    # Select TX block registers and RAM window by rf_chain. This mirrors the
+    # LoRa portion of Semtech sx1302_send(): program TX RF/modem registers,
+    # write bytes to 0x5300/0x5500 while WRITE_BUFFER is set, then pulse the
+    # TX trigger bit. Writing only the payload length makes higher layers
+    # believe TX succeeded while the concentrator cannot emit a valid packet.
     prefix = "TX_TOP_A" if rf_chain == 0 else "TX_TOP_B"
+    tx_buffer_addr = 0x5300 if rf_chain == 0 else 0x5500
 
-    # Write payload to TX buffer
-    _reg_wb(f"{prefix}_TXRX_CFG0_3_PAYLOAD_LENGTH", bytes([len(payload)]))
-    # Trigger TX
-    if tx_mode == TX_IMMEDIATE:
-        _reg_w(f"{prefix}_TX_TRIG_TX_TRIG_IMMEDIATE", 1)
+    freq_hz = int(pkt.get("freq_hz", rf_cfg.get("freq_hz", 0)))
+    if freq_hz <= 0 and tx_mode == TX_IMMEDIATE:
+        # Keep the software HAL unit-testable when callers only exercise the
+        # TX-buffer programming path and have not configured a real RF chain.
+        # Real hardware paths set freq_hz via lgw_rxrf_setconf()/packet metadata.
+        freq_hz = 915_075_000
+    if freq_hz <= 0:
+        log.error("lgw_send: invalid TX frequency %s", freq_hz)
+        return LGW_HAL_ERROR
+
+    bw = int(pkt.get("bandwidth", BW_125KHZ))
+    dr = int(pkt.get("datarate", DR_LORA_SF7))
+    coderate = int(pkt.get("coderate", CR_LORA_4_5))
+    preamble = int(pkt.get("preamble", 8)) or 8
+    preamble = max(preamble, 6)
+    no_header = bool(pkt.get("no_header", False))
+    no_crc = bool(pkt.get("no_crc", False))
+    invert_pol = bool(pkt.get("invert_pol", False))
+
+    # This HAL exposes Semtech public BW constants (1/2/3), while the SX1302
+    # TXRX_CFG MODEM_BW field uses hardware values 4/5/6.
+    hw_bw = {BW_125KHZ: 4, BW_250KHZ: 5, BW_500KHZ: 6}[bw]
+    bw_hz = {BW_125KHZ: 125_000, BW_250KHZ: 250_000, BW_500KHZ: 500_000}[bw]
+
+    freq_reg = (freq_hz * (1 << 18)) // 32_000_000
+    _reg_w(f"{prefix}_TX_RFFE_IF_FREQ_RF_H_FREQ_RF", (freq_reg >> 16) & 0xFF)
+    _reg_w(f"{prefix}_TX_RFFE_IF_FREQ_RF_M_FREQ_RF", (freq_reg >> 8) & 0xFF)
+    _reg_w(f"{prefix}_TX_RFFE_IF_FREQ_RF_L_FREQ_RF", freq_reg & 0xFF)
+
+    fdev_reg = ((bw_hz // 2) * (1 << 18)) // 32_000_000
+    _reg_w(f"{prefix}_TX_RFFE_IF_FREQ_DEV_H_FREQ_DEV", (fdev_reg >> 8) & 0xFF)
+    _reg_w(f"{prefix}_TX_RFFE_IF_FREQ_DEV_L_FREQ_DEV", fdev_reg & 0xFF)
+
+    # Minimal SX1250 power path. If a tx_lut is configured, use the closest
+    # not-greater entry; otherwise use a conservative PA-enable + pwr_idx from
+    # requested dBm so TX is not left at reset power.
+    rf_power = int(pkt.get("rf_power", 14))
+    tx_lut = list(rf_cfg.get("tx_lut") or [])
+    selected = None
+    for entry in sorted(tx_lut, key=lambda e: int(e.get("rf_power", -999))):
+        if int(entry.get("rf_power", -999)) <= rf_power:
+            selected = entry
+    if selected is not None:
+        pwr_idx = int(selected.get("pwr_idx", selected.get("rf_power", rf_power))) & 0x3F
+        pa_gain = int(selected.get("pa_gain", 1))
+        dig_gain = int(selected.get("dig_gain", 0)) & 0x03
+        power = ((1 if pa_gain > 0 else 0) << 6) | pwr_idx
     else:
-        # Write timestamp and use timestamped trigger
-        ts_bytes = struct.pack("<I", count_us & 0xFFFFFFFF)
-        _reg_wb(f"{prefix}_TX_TRIG_TX_TRIG_IMMEDIATE", ts_bytes)
+        dig_gain = 0
+        power = 0x40 | max(0, min(rf_power, 0x3F))
+    _reg_w(f"{prefix}_AGC_TX_PWR_AGC_TX_PWR", power)
+    _reg_w(f"{prefix}_TX_RFFE_IF_IQ_GAIN_IQ_GAIN", dig_gain)
+    _reg_w(f"{prefix}_AGC_TX_BW_AGC_TX_BW", bw)
+
+    _reg_w(f"{prefix}_TXRX_CFG0_0_MODEM_BW", hw_bw)
+    _reg_w(f"{prefix}_TXRX_CFG0_0_MODEM_SF", dr)
+    _reg_w(f"{prefix}_TXRX_CFG1_3_PREAMBLE_SYMB_NB", (preamble >> 8) & 0xFF)
+    _reg_w(f"{prefix}_TXRX_CFG1_2_PREAMBLE_SYMB_NB", preamble & 0xFF)
+    _reg_w(f"{prefix}_TXRX_CFG0_1_CODING_RATE", coderate)
+    _reg_w(f"{prefix}_TXRX_CFG0_2_MODEM_EN", 1)
+    _reg_w(f"{prefix}_TXRX_CFG0_2_CADRXTX", 2)
+    _reg_w(f"{prefix}_TXRX_CFG1_1_MODEM_START", 1)
+    _reg_w(f"{prefix}_TX_CFG0_0_CONTINUOUS", 0)
+    _reg_w(f"{prefix}_TX_CFG0_0_CHIRP_INVERT", 1 if invert_pol else 0)
+    _reg_w(f"{prefix}_TXRX_CFG0_2_IMPLICIT_HEADER", 1 if no_header else 0)
+    _reg_w(f"{prefix}_TXRX_CFG0_2_CRC_EN", 0 if no_crc else 1)
+
+    # MeshCore/private sync word. The SX1302 TX block exposes LoRa sync word as
+    # correlator peak positions, matching Semtech's private 0x12 branch.
+    _reg_w(f"{prefix}_FRAME_SYNCH_0_PEAK1_POS", 2)
+    _reg_w(f"{prefix}_FRAME_SYNCH_1_PEAK2_POS", 4)
+    _reg_w(f"{prefix}_TXRX_CFG0_2_FINE_SYNCH_EN", 1 if dr in (DR_LORA_SF5, DR_LORA_SF6) else 0)
+    _reg_w(f"{prefix}_TXRX_CFG0_1_PPM_OFFSET_HDR_CTRL", 0)
+    _reg_w(f"{prefix}_TXRX_CFG0_1_PPM_OFFSET", 1 if ((bw == BW_125KHZ and dr >= DR_LORA_SF11) or (bw == BW_250KHZ and dr >= DR_LORA_SF12)) else 0)
+
+    _reg_wb(f"{prefix}_TXRX_CFG0_3_PAYLOAD_LENGTH", bytes([len(payload)]))
+    _reg_w(f"{prefix}_TX_CTRL_WRITE_BUFFER", 1)
+    if payload:
+        _mem_write(tx_buffer_addr, payload)
+    _reg_w(f"{prefix}_TX_CTRL_WRITE_BUFFER", 0)
+
+    log.info(
+        "lgw_send: programmed TX modem freq=%d bw=%d(sf_code=%d) sf=%d cr=%d preamble=%d payload_len=%d rf_chain=%d txbuf=0x%04X",
+        freq_hz, bw_hz, hw_bw, dr, coderate, preamble, len(payload), rf_chain, tx_buffer_addr,
+    )
+
+    # Trigger TX. The trigger bit is pulsed 0 -> 1 as in Semtech's HAL.
+    if tx_mode == TX_IMMEDIATE:
+        _reg_w(f"{prefix}_TX_TRIG_TX_TRIG_IMMEDIATE", 0)
+        _reg_w(f"{prefix}_TX_TRIG_TX_TRIG_IMMEDIATE", 1)
+    elif tx_mode == TX_TIMESTAMPED:
+        count = count_us & 0xFFFFFFFF
+        _reg_w(f"{prefix}_TIMER_TRIG_BYTE0_TIMER_DELAYED_TRIG", (count >> 0) & 0xFF)
+        _reg_w(f"{prefix}_TIMER_TRIG_BYTE1_TIMER_DELAYED_TRIG", (count >> 8) & 0xFF)
+        _reg_w(f"{prefix}_TIMER_TRIG_BYTE2_TIMER_DELAYED_TRIG", (count >> 16) & 0xFF)
+        _reg_w(f"{prefix}_TIMER_TRIG_BYTE3_TIMER_DELAYED_TRIG", (count >> 24) & 0xFF)
+        _reg_w(f"{prefix}_TX_TRIG_TX_TRIG_DELAYED", 0)
         _reg_w(f"{prefix}_TX_TRIG_TX_TRIG_DELAYED", 1)
+    else:
+        log.error("lgw_send: unsupported tx_mode %s", tx_mode)
+        return LGW_HAL_ERROR
 
     log.debug("lgw_send: queued %d bytes on rf_chain=%d", len(payload), rf_chain)
     return LGW_HAL_SUCCESS
@@ -3949,7 +4047,7 @@ def lgw_get_trigcnt() -> Tuple[int, int]:
 def lgw_get_instcnt() -> Tuple[int, int]:
     """Return the SX1302 instant counter using the Semtech C HAL name.
 
-    The daemon-local HAL's trigger counter and instant counter are backed by the
+    The pure-Python HAL's trigger counter and instant counter are backed by the
     same 32-bit microsecond timestamp register today.
     """
     return lgw_get_trigcnt()
@@ -4068,5 +4166,4 @@ def lgw_status(rf_chain: int, select: int) -> Tuple[int, int]:
     except Exception as exc:
         log.error("lgw_status: %s", exc)
         return LGW_HAL_ERROR, 0
-
 

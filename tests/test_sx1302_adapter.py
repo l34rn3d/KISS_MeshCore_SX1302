@@ -57,7 +57,7 @@ def test_configure_instantiates_sx1302radio_with_config_values():
 async def test_start_stop_and_transmit_delegate_to_radio():
     radio = FakeRadio(frequency=915000000)
     adapter = SX1302Adapter(radio_factory=lambda **kwargs: radio)
-    await adapter.configure(RadioConfig())
+    await adapter.configure(RadioConfig(frequency_hz=915000000, bandwidth_hz=125000, spreading_factor=8, coding_rate=5, tx_power_dbm=14))
 
     await adapter.start()
     result = await adapter.transmit(TxPacket(payload=b"abc", frequency_hz=915000000, bandwidth_hz=125000, spreading_factor=8, coding_rate=5, tx_power_dbm=14))
@@ -74,7 +74,7 @@ async def test_start_stop_and_transmit_delegate_to_radio():
 async def test_receive_normalizes_payload_and_last_signal_metadata():
     radio = FakeRadio()
     adapter = SX1302Adapter(radio_factory=lambda **kwargs: radio)
-    await adapter.configure(RadioConfig(frequency_hz=915000000, bandwidth_hz=125000, spreading_factor=8, coding_rate=5))
+    await adapter.configure(RadioConfig(frequency_hz=915000000, bandwidth_hz=125000, spreading_factor=8, coding_rate=5, tx_power_dbm=14))
     radio.rx_queue.put_nowait(b"abc")
 
     pkt = await adapter.receive()

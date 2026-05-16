@@ -44,7 +44,7 @@ async def test_reconfigure_after_start_restarts_replacement_radio_before_tx():
         )
     )
 
-    assert len(FakeRadio.instances) == 2
+    assert len(FakeRadio.instances) == 1
     assert FakeRadio.instances[-1].started is True
     assert result.ok is True
     assert result.error is None

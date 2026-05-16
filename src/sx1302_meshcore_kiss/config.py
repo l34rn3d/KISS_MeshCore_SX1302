@@ -45,6 +45,7 @@ class DashboardConfig:
 class LoggingConfig:
     level: str = "INFO"
     log_raw_payloads: bool = False
+    live_log_path: str = "/run/sx1302-meshcore-kiss/live.log"
 
 @dataclass
 class StatusConfig:

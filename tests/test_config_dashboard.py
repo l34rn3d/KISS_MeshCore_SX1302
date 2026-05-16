@@ -21,13 +21,15 @@ def test_load_config_defaults_to_network_dashboard_and_pty(tmp_path):
     assert config.crc.forward_unknown_crc is True
     assert config.crc.publish_bad_crc_payload is False
     assert config.mqtt.enabled is False
-    assert config.radio.frequency_hz == 915_075_000
-    assert config.radio.spreading_factor == 9
-    assert config.radio.tx_power_dbm == 26
-    assert config.radio.sync_word == 5156
-    assert config.radio.sx1261_spi_path == "/dev/spidev0.1"
-    assert config.radio.sx1302_reset_pin == 23
-    assert config.radio.sx1261_reset_pin == 22
+    assert config.radio.frequency_hz is None
+    assert config.radio.bandwidth_hz is None
+    assert config.radio.spreading_factor is None
+    assert config.radio.coding_rate is None
+    assert config.radio.tx_power_dbm is None
+    assert config.radio.sync_word is None
+    assert config.radio.sx1261_spi_path is None
+    assert config.radio.sx1302_reset_pin == 17
+    assert config.radio.sx1261_reset_pin == 5
 
 
 def test_redact_config_hides_mqtt_password_and_keeps_payload_flags():

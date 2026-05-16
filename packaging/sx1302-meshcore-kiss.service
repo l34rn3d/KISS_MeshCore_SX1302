@@ -7,6 +7,7 @@ Wants=network-online.target
 Type=simple
 User=sx1302kiss
 Group=sx1302kiss
+SupplementaryGroups=spi gpio dialout
 WorkingDirectory=/opt/sx1302-meshcore-kiss
 ExecStart=/opt/sx1302-meshcore-kiss/.venv/bin/python -m sx1302_meshcore_kiss --config /etc/sx1302-meshcore-kiss/config.yaml
 RuntimeDirectory=sx1302-meshcore-kiss
