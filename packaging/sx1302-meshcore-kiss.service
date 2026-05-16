@@ -1,5 +1,5 @@
 [Unit]
-Description=SX1302 MeshCore KISS Modem
+Description=SX1302 MeshCore KISS Modem using Semtech-style driver
 After=network-online.target
 Wants=network-online.target
 

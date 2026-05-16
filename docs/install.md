@@ -1,68 +1,143 @@
-# Install sx1302-meshcore-kiss
+# Install / deploy sx1302-meshcore-kiss
 
-This is a source-install guide for the local SX1302 MeshCore KISS daemon.
+This is the deployment guide for the SX1302 MeshCore KISS daemon.
 
-## 1. Create a virtual environment
+The service is a Python daemon, but the radio side is not a pyMC hardware wrapper. It owns the SX1302/WM1302 concentrator and exposes a Semtech `libloragw` / `lgw_*`-style driver boundary for board config, RF chain config, IF chain config, start/stop, RX, TX, status, and airtime. pyMC/pyMC_Repeater should remain a KISS client only.
+
+## 1. Prerequisites
+
+Install system tools and hardware access packages appropriate for the target SBC:
 
 ```bash
-cd sx1302-meshcore-kiss
-uv venv .venv
-. .venv/bin/activate
-uv pip install -e '.[dev]'
+sudo apt-get update
+sudo apt-get install -y git python3 python3-venv python3-dev build-essential gpiod
 ```
 
-The daemon contains its own SX1302/WM1302 SPI/GPIO backend. Vanilla pyMC/pyMC_Repeater should talk to it only through the KISS PTY/serial interface.
+The daemon needs access to:
 
-## 2. Create system config
+- `/dev/spidev*` for the SX1302/WM1302 SPI bus;
+- `/dev/gpiochip*` for reset/power GPIOs;
+- optional serial devices if using `kiss.mode: serial` instead of PTY.
+
+Enable SPI in the board firmware/config before starting the service.
+
+## 2. Fetch the repository
+
+```bash
+sudo mkdir -p /opt
+cd /opt
+sudo git clone https://github.com/l34rn3d/KISS_MeshCore_SX1302.git sx1302-meshcore-kiss
+cd /opt/sx1302-meshcore-kiss
+sudo git checkout semtech-driver
+```
+
+If deploying from an already downloaded source tree instead of GitHub, copy that tree to:
+
+```text
+/opt/sx1302-meshcore-kiss
+```
+
+## 3. Create the service user
+
+```bash
+sudo useradd --system --home /opt/sx1302-meshcore-kiss --shell /usr/sbin/nologin sx1302kiss || true
+sudo usermod -aG spi,gpio sx1302kiss
+```
+
+If the board uses different groups for SPI/GPIO, add `sx1302kiss` to those groups as well. You can verify device ownership with:
+
+```bash
+ls -l /dev/spidev* /dev/gpiochip* 2>/dev/null
+```
+
+## 4. Create the Python environment
+
+The source tree includes `pyproject.toml` and can be installed editable:
+
+```bash
+cd /opt/sx1302-meshcore-kiss
+sudo python3 -m venv .venv
+sudo .venv/bin/pip install --upgrade pip wheel setuptools
+sudo .venv/bin/pip install -e '.[dev]'
+sudo chown -R sx1302kiss:sx1302kiss /opt/sx1302-meshcore-kiss
+```
+
+If `uv` is preferred and already installed:
+
+```bash
+cd /opt/sx1302-meshcore-kiss
+sudo uv venv .venv
+sudo uv pip install --python .venv/bin/python -e '.[dev]'
+```
+
+## 5. Create system config
 
 ```bash
 sudo mkdir -p /etc/sx1302-meshcore-kiss
-sudo cp config.example.yaml /etc/sx1302-meshcore-kiss/config.yaml
+sudo cp /opt/sx1302-meshcore-kiss/config.example.yaml /etc/sx1302-meshcore-kiss/config.yaml
 sudo editor /etc/sx1302-meshcore-kiss/config.yaml
 ```
 
 Set at least:
 
-- KISS PTY symlink, usually `/tmp/sx1302-kiss`
-- SPI device, usually `/dev/spidev0.0`
-- reset GPIO chip and pin numbers for the WM1302/SX1302 board
-- LoRa frequency/bandwidth/spreading factor/coding rate
-- MQTT host/credentials, if MQTT is enabled
+- `kiss.mode`, usually `pty`;
+- `kiss.symlink`, usually `/tmp/sx1302-kiss`;
+- `radio.spi_device`, usually `/dev/spidev0.0`;
+- `radio.frequency_hz`, `bandwidth_hz`, `spreading_factor`, `coding_rate`, and `tx_power_dbm`;
+- reset GPIO chip and pin numbers for the exact WM1302/SX1302 board;
+- MQTT host/credentials only if MQTT is enabled.
+
+Example radio block:
+
+```yaml
+radio:
+  frequency_hz: 915000000
+  bandwidth_hz: 125000
+  spreading_factor: 8
+  coding_rate: 5
+  tx_power_dbm: 14
+  preamble_len: 17
+  sync_word: null
+  implicit_header: false
+  invert_iq: false
+  spi_device: "/dev/spidev0.0"
+  sx1261_spi_path: null
+  reset_enabled: true
+  reset_required: false
+  gpio_chip: "gpiochip0"
+  power_enable_pin: 18
+  sx1302_reset_pin: 17
+  sx1261_reset_pin: 5
+  adc_reset_pin: 13
+  duty_cycle_enforcement: "raise"
+```
 
 Do not commit real MQTT passwords or other secrets. Use `[REDACTED]` in notes and logs.
 
-## 3. Hardware permissions
-
-The service user needs access to SPI and GPIO.
-
-Typical options:
+## 6. Install systemd service
 
 ```bash
-sudo usermod -aG spi,gpio sx1302-kiss
-```
-
-or a board-specific udev/systemd policy that grants access to:
-
-- `/dev/spidev*`
-- `/dev/gpiochip*`
-
-The daemon reset path currently shells out to `gpioset`; ensure the `gpiod` tools are installed and usable by the service user.
-
-## 4. Install systemd service
-
-```bash
-sudo cp packaging/sx1302-meshcore-kiss.service /etc/systemd/system/
+sudo cp /opt/sx1302-meshcore-kiss/packaging/sx1302-meshcore-kiss.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable sx1302-meshcore-kiss.service
 sudo systemctl start sx1302-meshcore-kiss.service
 sudo systemctl status sx1302-meshcore-kiss.service
 ```
 
-The example unit expects the repo at the path configured in `packaging/sx1302-meshcore-kiss.service` and config at `/etc/sx1302-meshcore-kiss/config.yaml`; edit the unit if installed elsewhere.
+The example unit expects:
 
-## 5. Configure pyMC_Repeater
+```text
+WorkingDirectory=/opt/sx1302-meshcore-kiss
+ExecStart=/opt/sx1302-meshcore-kiss/.venv/bin/python -m sx1302_meshcore_kiss --config /etc/sx1302-meshcore-kiss/config.yaml
+User=sx1302kiss
+Group=sx1302kiss
+```
 
-Point pyMC_Repeater at the daemon-owned PTY as a normal KISS radio:
+Edit the unit if you install to another path or use another service user.
+
+## 7. Configure pyMC_Repeater
+
+pyMC_Repeater should not use its direct radio hardware mode for this path. Point it at the daemon-owned KISS PTY:
 
 ```yaml
 radio_type: kiss
@@ -71,9 +146,15 @@ kiss:
   baud_rate: 115200
 ```
 
-## 6. Validate safely
+Then restart pyMC_Repeater after the KISS daemon is running:
 
-Run the unit and check logs:
+```bash
+sudo systemctl restart pymc-repeater.service
+```
+
+## 8. Validate safely
+
+Check the KISS daemon logs:
 
 ```bash
 journalctl -u sx1302-meshcore-kiss.service -f
@@ -81,10 +162,59 @@ journalctl -u sx1302-meshcore-kiss.service -f
 
 Validation goals:
 
-- daemon creates `/tmp/sx1302-kiss`
-- SPI open and SX1302 start succeed
-- reset GPIO pulses without permission errors
-- pyMC_Repeater opens the PTY
-- received good RF packets appear as KISS `Data 0x00`
-- bad CRC packets are counted/published but not forwarded to pyMC
-- TX is only tested when legal and intentional
+- service starts without Python import errors;
+- daemon creates `/tmp/sx1302-kiss` in PTY mode;
+- service user can access SPI and GPIO;
+- GPIO reset sequence completes without permission errors;
+- SX1302/WM1302 start succeeds;
+- pyMC_Repeater opens `/tmp/sx1302-kiss`;
+- pyMC SetHardware requests configure the radio;
+- received good RF packets appear as KISS `Data 0x00`;
+- bad CRC packets are counted/published but not forwarded to pyMC;
+- TX is tested only when legal and intentional.
+
+Useful commands:
+
+```bash
+systemctl status sx1302-meshcore-kiss.service
+journalctl -u sx1302-meshcore-kiss.service -n 100 --no-pager
+ls -l /tmp/sx1302-kiss
+sudo -u sx1302kiss test -r /dev/spidev0.0 && echo spi_ok
+```
+
+## 9. Troubleshooting
+
+### PTY does not appear
+
+Check that `kiss.mode` is `pty`, then inspect logs:
+
+```bash
+grep -n "mode\|symlink" /etc/sx1302-meshcore-kiss/config.yaml
+journalctl -u sx1302-meshcore-kiss.service -n 100 --no-pager
+```
+
+### SPI permission denied
+
+Check device permissions and groups:
+
+```bash
+id sx1302kiss
+ls -l /dev/spidev* /dev/gpiochip* 2>/dev/null
+```
+
+Add the service user to the right hardware groups, then restart the service.
+
+### GPIO reset fails
+
+Install `gpiod` and verify the configured GPIO chip and line numbers. Board revisions can use different reset pins; do not assume the example pinout is correct for every WM1302/SenseCAP carrier.
+
+### pyMC cannot connect
+
+Confirm the symlink exists and pyMC config points at the same path:
+
+```bash
+ls -l /tmp/sx1302-kiss
+sudo grep -n "radio_type\|kiss:\|port:" /etc/pymc_repeater/config.yaml
+```
+
+pyMC should use `radio_type: kiss`, not direct SX1302/WM1302 hardware mode, when this daemon owns the concentrator.

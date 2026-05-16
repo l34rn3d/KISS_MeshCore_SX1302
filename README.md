@@ -1,22 +1,47 @@
 # sx1302-meshcore-kiss
 
-MeshCore-compatible standalone KISS modem daemon for using an SX1302/WM1302 concentrator with vanilla pyMC/pyMC_Repeater over KISS.
+MeshCore-compatible KISS modem daemon for SX1302/WM1302 concentrators.
+
+This project is **not a pyMC radio implementation** and pyMC does not drive the hardware directly. It is a standalone modem bridge: pyMC/pyMC_Repeater talks normal KISS over a PTY or serial device, while this daemon owns the SX1302/WM1302 hardware using a daemon-local driver layer that follows Semtech `libloragw` / `lgw_*` HAL semantics for board, RF chain, IF chain, RX, TX, status, and airtime operations.
 
 ```text
 pyMC_Repeater / pyMC_core
         ⇅
-KISS serial / PTY interface
+KISS serial / PTY interface, usually /tmp/sx1302-kiss
         ⇅
 sx1302-meshcore-kiss daemon
         ⇅
-daemon-local SX1302/WM1302 SPI/GPIO backend
+Semtech-style SX1302/WM1302 driver layer
         ⇅
-SX1302 / WM1302 concentrator hardware
+Linux SPI + GPIO reset/power control
+        ⇅
+SX1302 / SX1303 concentrator + SX1250 radios, e.g. WM1302
 ```
+
+## What this is for
+
+Use this when you want existing MeshCore/pyMC software to treat an SX1302/WM1302 concentrator like a KISS modem without importing or modifying pyMC hardware wrappers.
+
+The daemon is responsible for:
+
+- creating the KISS PTY or opening the configured serial endpoint;
+- accepting MeshCore KISS data and SetHardware control frames;
+- configuring the SX1302/WM1302 radio from daemon config and host SetHardware requests;
+- resetting and starting the concentrator using board-specific SPI/GPIO settings;
+- transmitting and receiving LoRa packets through the SX1302 driver layer;
+- returning KISS data, `TxDone`, metadata, counters, MQTT telemetry, and dashboard state.
+
+pyMC/pyMC_Repeater should be configured only as a KISS client.
 
 ## Status
 
-Initial implementation/prototype. The pure daemon behavior is covered by tests; real WM1302/SX1302 RF validation still needs to be done on hardware.
+Prototype/alpha. The daemon, KISS protocol handling, config path, dashboard APIs, and adapter behavior are unit-tested. Hardware deployment still requires board-specific validation of SPI, GPIO reset pins, RF settings, legal TX configuration, and pyMC KISS integration.
+
+Current expected test result on a development machine:
+
+```text
+40 passed
+```
 
 ## Implemented
 
@@ -57,16 +82,60 @@ Initial implementation/prototype. The pure daemon behavior is covered by tests; 
 - Config redaction for secrets.
 - Basic systemd unit example.
 
-## Install / run from source
+## Install / deploy
 
-Full install/service notes are in [`docs/install.md`](docs/install.md). Quick source run:
+Full install/service notes are in [`docs/install.md`](docs/install.md). The short path is:
 
 ```bash
+git clone https://github.com/l34rn3d/KISS_MeshCore_SX1302.git sx1302-meshcore-kiss
 cd sx1302-meshcore-kiss
-PYTHONPATH=src python -m sx1302_meshcore_kiss.main --config config.example.yaml
+git checkout semtech-driver
+uv venv .venv
+. .venv/bin/activate
+uv pip install -e '.[dev]'
 ```
 
-For pyMC_Repeater on the same host, point its KISS radio config at the PTY symlink:
+Create config:
+
+```bash
+sudo mkdir -p /etc/sx1302-meshcore-kiss
+sudo cp config.example.yaml /etc/sx1302-meshcore-kiss/config.yaml
+sudo editor /etc/sx1302-meshcore-kiss/config.yaml
+```
+
+Set board-specific values in `radio:`:
+
+```yaml
+radio:
+  frequency_hz: 915000000
+  bandwidth_hz: 125000
+  spreading_factor: 8
+  coding_rate: 5
+  tx_power_dbm: 14
+  spi_device: "/dev/spidev0.0"
+  reset_enabled: true
+  gpio_chip: "gpiochip0"
+  power_enable_pin: 18
+  sx1302_reset_pin: 17
+  sx1261_reset_pin: 5
+  adc_reset_pin: 13
+```
+
+Install and start the service:
+
+```bash
+sudo useradd --system --home /opt/sx1302-meshcore-kiss --shell /usr/sbin/nologin sx1302kiss || true
+sudo usermod -aG spi,gpio sx1302kiss
+sudo mkdir -p /opt
+sudo cp -a . /opt/sx1302-meshcore-kiss
+sudo chown -R sx1302kiss:sx1302kiss /opt/sx1302-meshcore-kiss
+sudo cp packaging/sx1302-meshcore-kiss.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now sx1302-meshcore-kiss.service
+sudo systemctl status sx1302-meshcore-kiss.service
+```
+
+For pyMC_Repeater on the same host, point its radio config at the daemon's PTY symlink:
 
 ```yaml
 radio_type: kiss
@@ -75,7 +144,24 @@ kiss:
   baud_rate: 115200
 ```
 
-The daemon owns SX1302 radio configuration. Match daemon-side radio settings to the mesh.
+## Validate a deployment
+
+Check the service and logs:
+
+```bash
+systemctl status sx1302-meshcore-kiss.service
+journalctl -u sx1302-meshcore-kiss.service -f
+```
+
+Expected signs of a good deployment:
+
+- `/tmp/sx1302-kiss` exists when using PTY mode;
+- the service user can open `/dev/spidev0.0` and `/dev/gpiochip*`;
+- the GPIO reset sequence completes without permission errors;
+- the SX1302/WM1302 start path succeeds;
+- pyMC_Repeater opens `/tmp/sx1302-kiss` as a KISS modem;
+- pyMC SetHardware frames configure radio frequency, bandwidth, spreading factor, coding rate, and TX power;
+- TX is tested only when legal and intentional.
 
 ## Safety notes
 
@@ -85,6 +171,7 @@ The daemon owns SX1302 radio configuration. Match daemon-side radio settings to 
 - Raw packet events are not retained in MQTT by default.
 - MQTT password is redacted from `/api/config`.
 - Bad RF CRC packets are not forwarded to pyMC.
+- Always verify local radio regulations before enabling TX.
 
 ## Test
 
@@ -96,7 +183,7 @@ PYTHONPATH=src pytest -q
 Current expected result:
 
 ```text
-33 passed
+40 passed
 ```
 
 ## Development roadmap

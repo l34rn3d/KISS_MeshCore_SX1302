@@ -1,7 +1,7 @@
-"""SX1302/WM1302 LoRa concentrator driver.
+"""SX1302/WM1302 radio backend.
 
 Implements the local :class:`~sx1302_meshcore_kiss.sx1302.base.LoRaRadio` interface using the
-pure-Python SX1302 HAL (no C library required).
+daemon-local Semtech-style SX1302 HAL boundary.
 
 Hardware notes:
 

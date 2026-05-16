@@ -1,7 +1,8 @@
-"""Pure Python SX1302 HAL — direct spidev implementation.
+"""Semtech-style SX1302 HAL boundary implemented over Linux spidev.
 
-Replaces ctypes bindings to libloragw.so.  Talks to the SX1302 LoRa
-concentrator and SX1250 RF frontends directly via Linux spidev.
+This module mirrors the public shape and naming of Semtech's libloragw
+``lgw_*`` driver calls while talking to the SX1302 concentrator and SX1250 RF
+frontends through Linux spidev/GPIO from the daemon process.
 
 Supported hardware:
     SX1302 / SX1303 concentrator with SX1250 radios (WM1302 module).
@@ -117,7 +118,7 @@ LGW_SPECTRAL_SCAN_RESULT_SIZE = 33
 
 @dataclass(frozen=True)
 class SX1302Capabilities:
-    """Feature flags for the pure-Python SX1302 HAL.
+    """Feature flags for the daemon-local SX1302 HAL boundary.
 
     These flags intentionally describe what this Python implementation exposes
     today, not every feature present in Semtech's C HAL. Advanced features
@@ -3440,7 +3441,7 @@ def _record_pre_start_config(name: str, conf: Any) -> int:
 def lgw_demod_setconf(conf: Any) -> int:
     """Record demodulator configuration for C HAL API compatibility.
 
-    The pure-Python HAL currently configures SX1302 demodulators from the RX IF
+    The daemon-local HAL currently configures SX1302 demodulators from the RX IF
     chain table in :func:`lgw_start`.  This function keeps the Semtech C HAL
     surface available for callers that provide an extra demodulator config
     block, without claiming new hardware capability.
@@ -3507,7 +3508,7 @@ def lgw_sx1261_getconf() -> Optional[Dict[str, Any]]:
 def lgw_spectral_scan_start(freq_hz: int, nb_scan: int = 1) -> int:
     """Start a placeholder SX1261 spectral scan.
 
-    The pure-Python HAL does not yet read real scan bins from SX1261. This
+    The daemon-local HAL does not yet read real scan bins from SX1261. This
     scaffold records requested scan state so CAD/LBT can be designed against a
     stable API before hardware-level spectral implementation lands.
     """
@@ -3948,7 +3949,7 @@ def lgw_get_trigcnt() -> Tuple[int, int]:
 def lgw_get_instcnt() -> Tuple[int, int]:
     """Return the SX1302 instant counter using the Semtech C HAL name.
 
-    The pure-Python HAL's trigger counter and instant counter are backed by the
+    The daemon-local HAL's trigger counter and instant counter are backed by the
     same 32-bit microsecond timestamp register today.
     """
     return lgw_get_trigcnt()

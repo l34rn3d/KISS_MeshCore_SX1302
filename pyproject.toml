@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "sx1302-meshcore-kiss"
 version = "0.1.0"
-description = "Standalone MeshCore-compatible KISS modem daemon for SX1302/WM1302 concentrators"
+description = "MeshCore KISS modem daemon for SX1302/WM1302 concentrators using a Semtech-style driver boundary"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
