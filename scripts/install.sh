@@ -143,11 +143,12 @@ ensure_service_user() {
   local groups_to_add=()
   getent group spi >/dev/null 2>&1 && groups_to_add+=(spi)
   getent group gpio >/dev/null 2>&1 && groups_to_add+=(gpio)
+  getent group i2c >/dev/null 2>&1 && groups_to_add+=(i2c)
   getent group dialout >/dev/null 2>&1 && groups_to_add+=(dialout)
   if [[ ${#groups_to_add[@]} -gt 0 ]]; then
     usermod -aG "$(IFS=,; echo "${groups_to_add[*]}")" "${SERVICE_USER}"
   else
-    warn "No spi/gpio/dialout groups found; check device permissions manually"
+    warn "No spi/gpio/i2c/dialout groups found; check device permissions manually"
   fi
 }
 
