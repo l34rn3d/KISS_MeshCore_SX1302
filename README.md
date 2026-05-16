@@ -84,11 +84,19 @@ Current expected test result on a development machine:
 
 ## Install / deploy
 
-Full install/service notes are in [`docs/install.md`](docs/install.md). The short path is:
+Full install/service notes are in [`docs/install.md`](docs/install.md). The easiest path on the target SBC is:
 
 ```bash
 git clone --branch semtech-driver --single-branch https://github.com/l34rn3d/KISS_MeshCore_SX1302.git sx1302-meshcore-kiss
 cd sx1302-meshcore-kiss
+sudo ./scripts/install.sh
+```
+
+The installer sets up apt prerequisites, `/opt/sx1302-meshcore-kiss`, the `sx1302kiss` service user, a venv, `/etc/sx1302-meshcore-kiss/config.yaml`, and the systemd unit. It enables the service but does not start it unless you pass `--start`, so you can edit board-specific GPIO/SPI settings first.
+
+Manual venv-only development install:
+
+```bash
 uv venv .venv
 . .venv/bin/activate
 uv pip install -e '.[dev]'

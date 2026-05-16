@@ -21,7 +21,33 @@ The daemon needs access to:
 
 Enable SPI in the board firmware/config before starting the service.
 
-## 2. Fetch the repository
+## 2. Fetch and install the repository
+
+The easiest path is to clone the repo and run the installer:
+
+```bash
+git clone --branch semtech-driver --single-branch https://github.com/l34rn3d/KISS_MeshCore_SX1302.git sx1302-meshcore-kiss
+cd sx1302-meshcore-kiss
+sudo ./scripts/install.sh
+```
+
+The script installs prerequisites, copies the tracked source to `/opt/sx1302-meshcore-kiss`, creates the `sx1302kiss` service user, builds the venv, creates `/etc/sx1302-meshcore-kiss/config.yaml` if missing, installs/enables the systemd unit, and runs a basic import/help verification. It does **not** start the daemon unless you pass `--start` so board-specific GPIO/SPI config can be edited first.
+
+Useful installer options:
+
+```bash
+sudo ./scripts/install.sh --help
+sudo ./scripts/install.sh --start              # install and start/restart systemd service
+sudo ./scripts/install.sh --skip-apt           # skip apt-get on pre-provisioned hosts
+sudo ./scripts/install.sh --dev                # include test/dev dependencies
+sudo ./scripts/install.sh --source-dir /path/to/checkout
+```
+
+If deploying from an already downloaded source tree instead of GitHub, run the installer from that checkout or pass `--source-dir`.
+
+Manual install steps are below for troubleshooting or custom layouts.
+
+### Manual fetch
 
 ```bash
 sudo mkdir -p /opt
