@@ -21,6 +21,73 @@ The daemon needs access to:
 
 Enable SPI in the board firmware/config before starting the service.
 
+## Quick start
+
+### 1. Clone and install the SX1302 KISS bridge
+
+```bash
+git clone --branch semtech-driver --single-branch https://github.com/l34rn3d/KISS_MeshCore_SX1302.git sx1302-meshcore-kiss
+cd sx1302-meshcore-kiss
+sudo ./scripts/install.sh
+sudo editor /etc/sx1302-meshcore-kiss/config.yaml
+sudo systemctl start sx1302-meshcore-kiss.service
+```
+
+Edit only the board-specific SX1302 settings before starting, especially SPI/GPIO reset pins. The dashboard listens on `0.0.0.0:8080` by default, so after start it should be reachable at:
+
+```text
+http://<device-ip>:8080/
+```
+
+The bridge creates the KISS PTY here by default:
+
+```text
+/run/sx1302-meshcore-kiss/sx1302-kiss
+```
+
+### 2. Install pyMC_Repeater and edit its config
+
+Install pyMC_Repeater using its normal installer/instructions, then edit its config file:
+
+```bash
+sudo editor /etc/pymc_repeater/config.yaml
+```
+
+Set pyMC_Repeater to KISS mode and point it at the SX1302 bridge device path:
+
+```yaml
+radio_type: kiss
+kiss:
+  port: "/run/sx1302-meshcore-kiss/sx1302-kiss"
+  baud_rate: 115200
+```
+
+Restart pyMC_Repeater after the SX1302 bridge is running:
+
+```bash
+sudo systemctl restart pymc-repeater.service
+```
+
+### 3. Clean up / remove the SX1302 bridge
+
+Preview what would be removed:
+
+```bash
+sudo ./scripts/cleanup.sh
+```
+
+Remove the systemd service and installed app directory, but keep config:
+
+```bash
+sudo ./scripts/cleanup.sh --yes
+```
+
+Full removal including saved config and service user:
+
+```bash
+sudo ./scripts/cleanup.sh --yes --purge-config --remove-user
+```
+
 ## 2. Fetch and install the repository
 
 The easiest path is to clone the repo and run the installer:
