@@ -45,6 +45,14 @@ sudo ./scripts/install.sh --source-dir /path/to/checkout
 
 If deploying from an already downloaded source tree instead of GitHub, run the installer from that checkout or pass `--source-dir`.
 
+To remove the service later, run the cleanup helper. It is dry-run by default and prints what would be removed. With `--yes`, it stops/disables the service, removes `/etc/systemd/system/sx1302-meshcore-kiss.service`, and removes `/opt/sx1302-meshcore-kiss`. It keeps `/etc/sx1302-meshcore-kiss` unless `--purge-config` is supplied, so board/radio settings are not deleted accidentally.
+
+```bash
+sudo ./scripts/cleanup.sh
+sudo ./scripts/cleanup.sh --yes
+sudo ./scripts/cleanup.sh --yes --purge-config --remove-user
+```
+
 Manual install steps are below for troubleshooting or custom layouts.
 
 ### Manual fetch
@@ -108,6 +116,7 @@ Set at least:
 - `kiss.mode`, usually `pty`;
 - `kiss.symlink`, usually `/run/sx1302-meshcore-kiss/sx1302-kiss`;
 - `radio.spi_device`, usually `/dev/spidev0.0`;
+- `dashboard.bind_host`, default `0.0.0.0` for Tailscale/LAN access; use `127.0.0.1` if you want local-only dashboard access;
 - reset GPIO chip and pin numbers for the exact WM1302/SX1302 board;
 - MQTT host/credentials only if MQTT is enabled.
 

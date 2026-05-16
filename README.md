@@ -40,7 +40,7 @@ Prototype/alpha. The daemon, KISS protocol handling, config path, dashboard APIs
 Current expected test result on a development machine:
 
 ```text
-40 passed
+41 passed
 ```
 
 ## Implemented
@@ -72,7 +72,7 @@ Current expected test result on a development machine:
   - `crc_ok=False`: drop from pyMC, MQTT `rx/bad_crc`, dashboard event.
   - `crc_ok=None`: drop by default, optional lab-only forwarding.
 - MQTT JSON telemetry schemas with payload hex and base64.
-- Local-only HTTP dashboard with browser UI and APIs:
+- Network-reachable HTTP dashboard with browser UI and APIs, bound to `0.0.0.0:8080` by default:
   - `/` live dashboard page
   - `/api/status`
   - `/api/counters`
@@ -100,6 +100,14 @@ sudo ./scripts/install.sh
 ```
 
 The installer sets up apt prerequisites, `/opt/sx1302-meshcore-kiss`, the `sx1302kiss` service user, a venv, `/etc/sx1302-meshcore-kiss/config.yaml`, and the systemd unit. It enables the service but does not start it unless you pass `--start`, so you can edit board-specific GPIO/SPI settings first.
+
+To remove the service later, use the cleanup helper. It is dry-run by default and prints exactly what it would remove; pass `--yes` to actually stop/disable the service and remove the installed app directory. Config is kept unless `--purge-config` is provided.
+
+```bash
+sudo ./scripts/cleanup.sh
+sudo ./scripts/cleanup.sh --yes
+sudo ./scripts/cleanup.sh --yes --purge-config --remove-user
+```
 
 Manual venv-only development install:
 
@@ -179,7 +187,7 @@ Expected signs of a good deployment:
 
 ## Safety notes
 
-- Dashboard binds to `127.0.0.1:8080` by default.
+- Dashboard binds to `0.0.0.0:8080` by default so it is reachable over Tailscale/LAN interfaces; firewall or tunnel access should be controlled at the host/network layer.
 - Raw payload logging is disabled by default.
 - Packet events are kept in RAM only.
 - Raw packet events are not retained in MQTT by default.
@@ -197,7 +205,7 @@ PYTHONPATH=src pytest -q
 Current expected result:
 
 ```text
-40 passed
+41 passed
 ```
 
 ## Development roadmap

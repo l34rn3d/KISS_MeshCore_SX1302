@@ -53,7 +53,7 @@ status:
 
 dashboard:
   enabled: true
-  bind_host: "127.0.0.1"
+  bind_host: "0.0.0.0"
   port: 8080
   max_packet_events: 50
 

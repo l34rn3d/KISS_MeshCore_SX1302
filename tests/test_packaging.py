@@ -24,3 +24,16 @@ def test_install_docs_cover_uv_systemd_and_hardware_permissions():
     assert "spi" in text
     assert "gpio" in text
     assert "/etc/sx1302-meshcore-kiss/config.yaml" in text
+
+
+def test_cleanup_script_documents_safe_uninstall_targets():
+    script = Path("scripts/cleanup.sh")
+    assert script.exists()
+
+    text = script.read_text()
+    assert "sx1302-meshcore-kiss.service" in text
+    assert "/opt/sx1302-meshcore-kiss" in text
+    assert "/etc/sx1302-meshcore-kiss" in text
+    assert "--purge-config" in text
+    assert "--remove-user" in text
+    assert "DRY_RUN" in text
