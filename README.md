@@ -81,6 +81,13 @@ Current expected test result on a development machine:
 - In-memory packet ring buffer only, default max 50 events.
 - Config redaction for secrets.
 - Basic systemd unit example.
+- 62.5 kHz TX/RX investigation notes and live verification fields are documented in [`docs/62k5-tx-rx-notes.md`](docs/62k5-tx-rx-notes.md).
+
+## Documentation
+
+- [`docs/install.md`](docs/install.md): full install, service, config, and validation guide.
+- [`docs/architecture.md`](docs/architecture.md): daemon architecture and boundary notes.
+- [`docs/62k5-tx-rx-notes.md`](docs/62k5-tx-rx-notes.md): 62.5 kHz SX1302/SX1261 TX/RX fixes, current split, diagnostics, and live test values.
 
 ## Install / deploy
 
