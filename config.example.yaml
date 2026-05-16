@@ -2,7 +2,7 @@ node_id: "repeater-01"
 
 kiss:
   mode: "pty"                 # pty | serial
-  symlink: "/tmp/sx1302-kiss"
+  symlink: "/run/sx1302-meshcore-kiss/sx1302-kiss"
   serial_port: "/dev/ttyUSB0"
   baud_rate: 115200
   tcp_bind: "127.0.0.1"

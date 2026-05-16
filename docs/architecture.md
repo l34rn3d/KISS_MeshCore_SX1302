@@ -78,7 +78,7 @@ The intended Linux service layout is:
 /opt/sx1302-meshcore-kiss/                  source checkout + venv
 /etc/sx1302-meshcore-kiss/config.yaml       daemon config
 /etc/systemd/system/sx1302-meshcore-kiss.service
-/tmp/sx1302-kiss                            PTY symlink used by pyMC_Repeater
+/run/sx1302-meshcore-kiss/sx1302-kiss                            PTY symlink used by pyMC_Repeater
 ```
 
 The service user needs access to SPI and GPIO devices but pyMC does not.

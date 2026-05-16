@@ -106,7 +106,7 @@ sudo editor /etc/sx1302-meshcore-kiss/config.yaml
 Set at least:
 
 - `kiss.mode`, usually `pty`;
-- `kiss.symlink`, usually `/tmp/sx1302-kiss`;
+- `kiss.symlink`, usually `/run/sx1302-meshcore-kiss/sx1302-kiss`;
 - `radio.spi_device`, usually `/dev/spidev0.0`;
 - reset GPIO chip and pin numbers for the exact WM1302/SX1302 board;
 - MQTT host/credentials only if MQTT is enabled.
@@ -154,12 +154,17 @@ Edit the unit if you install to another path or use another service user.
 
 ## 7. Configure pyMC_Repeater
 
-pyMC_Repeater should not use its direct radio hardware mode for this path. Point it at the daemon-owned KISS PTY:
+pyMC_Repeater should not use its direct radio hardware mode for this path. Point it at the daemon-owned KISS PTY. The pyMC `kiss.port` value must match the daemon `kiss.symlink` value in `/etc/sx1302-meshcore-kiss/config.yaml`; the default is `/run/sx1302-meshcore-kiss/sx1302-kiss`. Avoid the old `/tmp/sx1302-kiss` path on systemd hosts because Linux protected-symlink rules can block another service user from following a symlink created in sticky `/tmp`.
+
+For existing installs, change both sides to the same device path:
+
+- SX1302 daemon: `/etc/sx1302-meshcore-kiss/config.yaml` → `kiss.symlink`
+- pyMC_Repeater: `/etc/pymc_repeater/config.yaml` → `kiss.port`
 
 ```yaml
 radio_type: kiss
 kiss:
-  port: "/tmp/sx1302-kiss"
+  port: "/run/sx1302-meshcore-kiss/sx1302-kiss"
   baud_rate: 115200
 ```
 
@@ -180,11 +185,11 @@ journalctl -u sx1302-meshcore-kiss.service -f
 Validation goals:
 
 - service starts without Python import errors;
-- daemon creates `/tmp/sx1302-kiss` in PTY mode;
+- daemon creates `/run/sx1302-meshcore-kiss/sx1302-kiss` in PTY mode;
 - service user can access SPI and GPIO;
 - GPIO reset sequence completes without permission errors;
 - SX1302/WM1302 start succeeds;
-- pyMC_Repeater opens `/tmp/sx1302-kiss`;
+- pyMC_Repeater opens `/run/sx1302-meshcore-kiss/sx1302-kiss`;
 - pyMC SetHardware requests configure the radio;
 - received good RF packets appear as KISS `Data 0x00`;
 - bad CRC packets are counted/published but not forwarded to pyMC;
@@ -195,7 +200,7 @@ Useful commands:
 ```bash
 systemctl status sx1302-meshcore-kiss.service
 journalctl -u sx1302-meshcore-kiss.service -n 100 --no-pager
-ls -l /tmp/sx1302-kiss
+ls -l /run/sx1302-meshcore-kiss/sx1302-kiss
 sudo -u sx1302kiss test -r /dev/spidev0.0 && echo spi_ok
 ```
 
@@ -230,7 +235,7 @@ Install `gpiod` and verify the configured GPIO chip and line numbers. Board revi
 Confirm the symlink exists and pyMC config points at the same path:
 
 ```bash
-ls -l /tmp/sx1302-kiss
+ls -l /run/sx1302-meshcore-kiss/sx1302-kiss
 sudo grep -n "radio_type\|kiss:\|port:" /etc/pymc_repeater/config.yaml
 ```
 

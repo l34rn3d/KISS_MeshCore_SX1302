@@ -4,7 +4,7 @@ from pathlib import Path
 from sx1302_meshcore_kiss.kiss.codec import KissCodec, encode_frame
 
 class PtyEndpoint:
-    def __init__(self, *, symlink: str = "/tmp/sx1302-kiss") -> None:
+    def __init__(self, *, symlink: str = "/run/sx1302-meshcore-kiss/sx1302-kiss") -> None:
         self.symlink=symlink; self.master_fd=None; self.slave_name=None; self.codec=KissCodec()
     async def start(self) -> None:
         self.master_fd, slave_fd = pty.openpty(); self.slave_name=os.ttyname(slave_fd)

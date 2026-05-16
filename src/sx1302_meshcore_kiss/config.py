@@ -8,7 +8,7 @@ from sx1302_meshcore_kiss.sx1302.metadata import RadioConfig
 @dataclass
 class KissConfig:
     mode: str = "pty"
-    symlink: str = "/tmp/sx1302-kiss"
+    symlink: str = "/run/sx1302-meshcore-kiss/sx1302-kiss"
     serial_port: str = "/dev/ttyUSB0"
     baud_rate: int = 115200
     tcp_bind: str = "127.0.0.1"

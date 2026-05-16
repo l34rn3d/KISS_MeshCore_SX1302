@@ -15,7 +15,7 @@ def test_load_config_defaults_to_local_dashboard_and_pty(tmp_path):
 
     assert config.node_id == "node-1"
     assert config.kiss.mode == "pty"
-    assert config.kiss.symlink == "/tmp/sx1302-kiss"
+    assert config.kiss.symlink == "/run/sx1302-meshcore-kiss/sx1302-kiss"
     assert config.dashboard.bind_host == "127.0.0.1"
     assert config.dashboard.max_packet_events == 50
     assert config.crc.forward_unknown_crc is False

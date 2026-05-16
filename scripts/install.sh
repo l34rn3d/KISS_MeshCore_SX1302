@@ -243,7 +243,7 @@ Install path:  ${INSTALL_DIR}
 Config path:   ${CONFIG_DIR}/config.yaml
 Service user:  ${SERVICE_USER}
 Service:       ${SERVICE_NAME}
-KISS PTY:      /tmp/sx1302-kiss by default
+KISS PTY:      /run/sx1302-meshcore-kiss/sx1302-kiss by default
 
 Next steps:
   1. Edit board-specific config:
@@ -252,7 +252,7 @@ Next steps:
      sudo systemctl start ${SERVICE_NAME}
   3. Watch logs:
      journalctl -u ${SERVICE_NAME} -n 100 --no-pager
-  4. Point pyMC_Repeater at the KISS PTY, usually /tmp/sx1302-kiss.
+  4. Point pyMC_Repeater at the KISS PTY, usually /run/sx1302-meshcore-kiss/sx1302-kiss.
 
 SUMMARY
 }

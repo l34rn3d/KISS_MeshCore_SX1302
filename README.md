@@ -7,7 +7,7 @@ This project is **not a pyMC radio implementation** and pyMC does not drive the 
 ```text
 pyMC_Repeater / pyMC_core
         ⇅
-KISS serial / PTY interface, usually /tmp/sx1302-kiss
+KISS serial / PTY interface, usually /run/sx1302-meshcore-kiss/sx1302-kiss
         ⇅
 sx1302-meshcore-kiss daemon
         ⇅
@@ -64,7 +64,7 @@ Current expected test result on a development machine:
   - `GetVersion 0x11`, `GetStats 0x12`
   - `SetSignalReport 0x19`, `GetSignalReport 0x1A`
 - Unsupported crypto/device/sensor SetHardware requests return MeshCore error responses instead of being treated as raw KISS commands.
-- PTY endpoint with default symlink `/tmp/sx1302-kiss`.
+- PTY endpoint with default symlink `/run/sx1302-meshcore-kiss/sx1302-kiss`.
 - Serial endpoint for real tty devices.
 - Standalone SX1302 adapter around daemon-local `sx1302_meshcore_kiss.sx1302.radio.SX1302Radio`; vanilla pyMC is only a KISS peer.
 - CRC policy inside the KISS daemon/service boundary:
@@ -144,12 +144,17 @@ sudo systemctl enable --now sx1302-meshcore-kiss.service
 sudo systemctl status sx1302-meshcore-kiss.service
 ```
 
-For pyMC_Repeater on the same host, point its radio config at the daemon's PTY symlink:
+For pyMC_Repeater on the same host, point its radio config at the daemon's PTY symlink. This path must match `kiss.symlink` in `/etc/sx1302-meshcore-kiss/config.yaml`; the default is `/run/sx1302-meshcore-kiss/sx1302-kiss`. Do **not** use the old `/tmp/sx1302-kiss` path on systemd hosts, because Linux protected-symlink rules can prevent the `repeater` user from opening it.
+
+For existing installs, change both sides to the same device path:
+
+- SX1302 daemon: `/etc/sx1302-meshcore-kiss/config.yaml` → `kiss.symlink`
+- pyMC_Repeater: `/etc/pymc_repeater/config.yaml` → `kiss.port`
 
 ```yaml
 radio_type: kiss
 kiss:
-  port: "/tmp/sx1302-kiss"
+  port: "/run/sx1302-meshcore-kiss/sx1302-kiss"
   baud_rate: 115200
 ```
 
@@ -164,11 +169,11 @@ journalctl -u sx1302-meshcore-kiss.service -f
 
 Expected signs of a good deployment:
 
-- `/tmp/sx1302-kiss` exists when using PTY mode;
+- `/run/sx1302-meshcore-kiss/sx1302-kiss` exists when using PTY mode;
 - the service user can open `/dev/spidev0.0` and `/dev/gpiochip*`;
 - the GPIO reset sequence completes without permission errors;
 - the SX1302/WM1302 start path succeeds;
-- pyMC_Repeater opens `/tmp/sx1302-kiss` as a KISS modem;
+- pyMC_Repeater opens `/run/sx1302-meshcore-kiss/sx1302-kiss` as a KISS modem;
 - pyMC SetHardware frames configure radio frequency, bandwidth, spreading factor, coding rate, and TX power;
 - TX is tested only when legal and intentional.
 
@@ -200,7 +205,7 @@ Current expected result:
 Next practical hardening steps:
 
 1. Real WM1302/SX1302 smoke test with the daemon in PTY mode.
-2. Verify pyMC_Repeater opens `/tmp/sx1302-kiss` and can exchange KISS frames.
+2. Verify pyMC_Repeater opens `/run/sx1302-meshcore-kiss/sx1302-kiss` and can exchange KISS frames.
 3. Add end-to-end integration test with a fake pyMC KISS client and fake SX1302 adapter.
 4. Add optional TCP KISS endpoint if needed.
 5. Improve periodic MQTT/status publishing and real connection tracking.
