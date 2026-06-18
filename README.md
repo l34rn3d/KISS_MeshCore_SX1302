@@ -92,6 +92,7 @@ Current expected test result on a development machine:
 ## Documentation
 
 - [`docs/install.md`](docs/install.md): full install, service, config, and validation guide.
+- [`docs/cricket-test-deploy.md`](docs/cricket-test-deploy.md): clean SenseCAP Cricket redeploy checklist for the native pyMC TCP driver.
 - [`docs/architecture.md`](docs/architecture.md): daemon architecture and boundary notes.
 - [`docs/62k5-tx-rx-notes.md`](docs/62k5-tx-rx-notes.md): 62.5 kHz SX1302/SX1261 TX/RX fixes, current split, diagnostics, and live test values.
 
@@ -100,11 +101,10 @@ Current expected test result on a development machine:
 ### 1. Clone and install the SX1302 KISS bridge
 
 ```bash
-git clone --branch semtech-driver --single-branch https://github.com/l34rn3d/KISS_MeshCore_SX1302.git sx1302-meshcore-kiss
+git clone --branch pymc-tcp-dev --single-branch https://github.com/l34rn3d/KISS_MeshCore_SX1302.git sx1302-meshcore-kiss
 cd sx1302-meshcore-kiss
-sudo ./scripts/install.sh
+sudo ./scripts/install.sh --start
 sudo editor /etc/sx1302-meshcore-kiss/config.yaml
-sudo systemctl start sx1302-meshcore-kiss.service
 ```
 
 The included default config is now based on the known-good `cricket` SenseCAP/WM1302 deployment: Semtech C HAL backend, `/dev/spidev0.0` + `/dev/spidev0.1`, reset pins `23/22`, sync word `5156`, LBT enabled, MQTT disabled, and CRC policy matching cricket. Only change identity/location or board-specific values if this device is genuinely wired differently. The dashboard listens on `0.0.0.0:8080` by default, so after start it should be reachable at:
@@ -113,10 +113,10 @@ The included default config is now based on the known-good `cricket` SenseCAP/WM
 http://<device-ip>:8080/
 ```
 
-The bridge creates the KISS PTY here by default:
+The native pyMC TCP modem listens here by default:
 
 ```text
-/run/sx1302-meshcore-kiss/sx1302-kiss
+0.0.0.0:5055
 ```
 
 ### 2. Install pyMC_Repeater and edit its config
@@ -127,10 +127,10 @@ Install pyMC_Repeater using its normal installer/instructions, then edit its con
 sudo editor /etc/pymc_repeater/config.yaml
 ```
 
-Set pyMC_Repeater to KISS mode, point it at the SX1302 bridge device path, and use the same MeshCore radio/path-hash values as cricket:
+Set pyMC_Repeater to native TCP mode and point it at the local SX1302 daemon:
 
 ```yaml
-radio_type: kiss
+radio_type: pymc_tcp
 mesh:
   path_hash_mode: 1
 radio:
@@ -140,9 +140,10 @@ radio:
   coding_rate: 5
   sync_word: 13380
   tx_power: 26
-kiss:
-  port: "/run/sx1302-meshcore-kiss/sx1302-kiss"
-  baud_rate: 115200
+pymc_tcp:
+  host: "127.0.0.1"
+  port: 5055
+  token: ""
 ```
 
 Restart pyMC_Repeater after the SX1302 bridge is running:
@@ -176,12 +177,12 @@ sudo ./scripts/cleanup.sh --yes --purge-config --remove-user
 Full install/service notes are in [`docs/install.md`](docs/install.md). The easiest path on the target SBC is:
 
 ```bash
-git clone --branch semtech-driver --single-branch https://github.com/l34rn3d/KISS_MeshCore_SX1302.git sx1302-meshcore-kiss
+git clone --branch pymc-tcp-dev --single-branch https://github.com/l34rn3d/KISS_MeshCore_SX1302.git sx1302-meshcore-kiss
 cd sx1302-meshcore-kiss
-sudo ./scripts/install.sh
+sudo ./scripts/install.sh --start
 ```
 
-The installer sets up apt prerequisites, `/opt/sx1302-meshcore-kiss`, the `sx1302kiss` service user, a venv, builds the cricket-style Semtech C HAL bridge at `/opt/sx1302-meshcore-kiss/build/c_hal/libmeshcore_lgw.so`, creates `/etc/sx1302-meshcore-kiss/config.yaml`, and installs the systemd unit. It enables the service but does not start it unless you pass `--start`, so you can edit board-specific GPIO/SPI settings first.
+The installer sets up apt prerequisites, `/opt/sx1302-meshcore-kiss`, the `sx1302kiss` service user, a venv, builds the cricket-style Semtech C HAL bridge at `/opt/sx1302-meshcore-kiss/build/c_hal/libmeshcore_lgw.so`, creates `/etc/sx1302-meshcore-kiss/config.yaml`, installs the systemd unit, enables the service, and starts it when `--start` is supplied.
 
 To remove the service later, use the cleanup helper. It is dry-run by default and prints exactly what it would remove; pass `--yes` to actually stop/disable the service and remove the installed app directory. Config is kept unless `--purge-config` is provided.
 
@@ -207,7 +208,7 @@ sudo cp config.example.yaml /etc/sx1302-meshcore-kiss/config.yaml
 sudo editor /etc/sx1302-meshcore-kiss/config.yaml
 ```
 
-The packaged `config.example.yaml` is a SenseCAP/WM1302 baseline copied from the known-good cricket deployment, except it keeps the safer `/run/sx1302-meshcore-kiss/sx1302-kiss` KISS path instead of cricket's older `/tmp` path. The bridge config owns hardware/backend/reset/dashboard policy; pyMC sends live RF values over MeshCore KISS `SetRadio` / `SetTxPower` after it connects.
+The packaged `config.example.yaml` is a SenseCAP/WM1302 baseline copied from the known-good cricket deployment. It defaults to native `pymc_tcp` on port `5055`. The bridge config owns hardware/backend/reset/dashboard policy; pyMC sends live RF values over native TCP `SET_CONFIG` after it connects.
 
 Key bridge defaults are:
 
@@ -218,7 +219,7 @@ radio:
   sync_word: 5156
   spi_device: "/dev/spidev0.0"
   sx1261_spi_path: "/dev/spidev0.1"
-  reset_script_path: "/opt/sx1302-meshcore-kiss/tools/reset_wm1302_pinctrl.sh"
+  reset_script_path: "/opt/sx1302-meshcore-kiss/tools/reset_lgw_nebra.sh"
   sx1302_reset_pin: 23
   sx1261_reset_pin: 22
   lbt_enabled: true
@@ -247,15 +248,10 @@ sudo systemctl enable --now sx1302-meshcore-kiss.service
 sudo systemctl status sx1302-meshcore-kiss.service
 ```
 
-For pyMC_Repeater on the same host, point its radio config at the daemon's PTY symlink. This path must match `kiss.symlink` in `/etc/sx1302-meshcore-kiss/config.yaml`; the default is `/run/sx1302-meshcore-kiss/sx1302-kiss`. Do **not** use the old `/tmp/sx1302-kiss` path on systemd hosts, because Linux protected-symlink rules can prevent the `repeater` user from opening it.
-
-For existing installs, change both sides to the same device path:
-
-- SX1302 daemon: `/etc/sx1302-meshcore-kiss/config.yaml` → `kiss.symlink`
-- pyMC_Repeater: `/etc/pymc_repeater/config.yaml` → `kiss.port`
+For pyMC_Repeater on the same host, point its radio config at the daemon's native TCP listener:
 
 ```yaml
-radio_type: kiss
+radio_type: pymc_tcp
 mesh:
   path_hash_mode: 1
 radio:
@@ -265,9 +261,10 @@ radio:
   coding_rate: 5
   sync_word: 13380
   tx_power: 26
-kiss:
-  port: "/run/sx1302-meshcore-kiss/sx1302-kiss"
-  baud_rate: 115200
+pymc_tcp:
+  host: "127.0.0.1"
+  port: 5055
+  token: ""
 ```
 
 ## Validate a deployment
@@ -281,12 +278,13 @@ journalctl -u sx1302-meshcore-kiss.service -f
 
 Expected signs of a good deployment:
 
-- `/run/sx1302-meshcore-kiss/sx1302-kiss` exists when using PTY mode;
+- `/api/status` reports `transport: "pymc_tcp"`;
+- `/api/status` reports `pymc_tcp.connected_clients: 1` after pyMC starts;
 - the service user can open `/dev/spidev0.0` and `/dev/gpiochip*`;
 - the GPIO reset sequence completes without permission errors;
 - the SX1302/WM1302 start path succeeds;
-- pyMC_Repeater opens `/run/sx1302-meshcore-kiss/sx1302-kiss` as a KISS modem;
-- pyMC SetHardware frames configure radio frequency, bandwidth, spreading factor, coding rate, and TX power;
+- pyMC_Repeater logs `TCPLoRaRadio initialized successfully`;
+- pyMC TCP `SET_CONFIG` configures radio frequency, bandwidth, spreading factor, coding rate, and TX power;
 - TX is tested only when legal and intentional.
 
 ## Safety notes
@@ -316,8 +314,8 @@ Current expected result:
 
 Next practical hardening steps:
 
-1. Real WM1302/SX1302 smoke test with the daemon in PTY mode.
-2. Verify pyMC_Repeater opens `/run/sx1302-meshcore-kiss/sx1302-kiss` and can exchange KISS frames.
-3. Add end-to-end integration test with a fake pyMC KISS client and fake SX1302 adapter.
-4. Add optional TCP KISS endpoint if needed.
+1. Harden authenticated pyMC TCP client broadcast handling.
+2. Add multi-client TX serialization if `max_clients > 1` is used.
+3. Add end-to-end integration test with a fake pyMC TCP client and fake SX1302 adapter.
+4. Keep KISS fallback tested for compatibility users.
 5. Improve periodic MQTT/status publishing and real connection tracking.

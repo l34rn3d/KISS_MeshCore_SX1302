@@ -1,8 +1,8 @@
 # Install / deploy sx1302-meshcore-kiss
 
-This is the deployment guide for the SX1302 MeshCore KISS daemon.
+This is the deployment guide for the SX1302 MeshCore pyMC TCP/KISS daemon.
 
-The service is a Python daemon, but the radio side is not a pyMC hardware wrapper. It owns the SX1302/WM1302 concentrator and exposes a Semtech `libloragw` / `lgw_*`-style driver boundary for board config, RF chain config, IF chain config, start/stop, RX, TX, status, and airtime. pyMC/pyMC_Repeater should remain a KISS client only.
+The service is a Python daemon, but the radio side is not a pyMC hardware wrapper. It owns the SX1302/WM1302 concentrator and exposes a Semtech `libloragw` / `lgw_*`-style driver boundary for board config, RF chain config, IF chain config, start/stop, RX, TX, status, and airtime. For this branch, pyMC/pyMC_Repeater should use native `pymc_tcp` on port `5055`; KISS remains a fallback compatibility path.
 
 ## 1. Prerequisites
 
@@ -26,11 +26,10 @@ Enable SPI in the board firmware/config before starting the service.
 ### 1. Clone and install the SX1302 KISS bridge
 
 ```bash
-git clone --branch semtech-driver --single-branch https://github.com/l34rn3d/KISS_MeshCore_SX1302.git sx1302-meshcore-kiss
+git clone --branch pymc-tcp-dev --single-branch https://github.com/l34rn3d/KISS_MeshCore_SX1302.git sx1302-meshcore-kiss
 cd sx1302-meshcore-kiss
-sudo ./scripts/install.sh
+sudo ./scripts/install.sh --start
 sudo editor /etc/sx1302-meshcore-kiss/config.yaml
-sudo systemctl start sx1302-meshcore-kiss.service
 ```
 
 The included default config is now based on the known-good `cricket` SenseCAP/WM1302 deployment: Semtech C HAL backend, `/dev/spidev0.0` + `/dev/spidev0.1`, reset pins `23/22`, sync word `5156`, LBT enabled, MQTT disabled, and CRC policy matching cricket. Only change identity/location or board-specific values if this device is genuinely wired differently. The dashboard listens on `0.0.0.0:8080` by default, so after start it should be reachable at:
@@ -39,10 +38,10 @@ The included default config is now based on the known-good `cricket` SenseCAP/WM
 http://<device-ip>:8080/
 ```
 
-The bridge creates the KISS PTY here by default:
+The daemon listens for native pyMC TCP clients here by default:
 
 ```text
-/run/sx1302-meshcore-kiss/sx1302-kiss
+0.0.0.0:5055
 ```
 
 ### 2. Install pyMC_Repeater and edit its config
@@ -53,10 +52,10 @@ Install pyMC_Repeater using its normal installer/instructions, then edit its con
 sudo editor /etc/pymc_repeater/config.yaml
 ```
 
-Set pyMC_Repeater to KISS mode, point it at the SX1302 bridge device path, and use the same MeshCore radio/path-hash values as cricket:
+Set pyMC_Repeater to native TCP mode and point it at the local SX1302 daemon:
 
 ```yaml
-radio_type: kiss
+radio_type: pymc_tcp
 mesh:
   path_hash_mode: 1
 radio:
@@ -66,9 +65,10 @@ radio:
   coding_rate: 5
   sync_word: 13380
   tx_power: 26
-kiss:
-  port: "/run/sx1302-meshcore-kiss/sx1302-kiss"
-  baud_rate: 115200
+pymc_tcp:
+  host: "127.0.0.1"
+  port: 5055
+  token: ""
 ```
 
 Restart pyMC_Repeater after the SX1302 bridge is running:
@@ -102,7 +102,7 @@ sudo ./scripts/cleanup.sh --yes --purge-config --remove-user
 The easiest path is to clone the repo and run the installer:
 
 ```bash
-git clone --branch semtech-driver --single-branch https://github.com/l34rn3d/KISS_MeshCore_SX1302.git sx1302-meshcore-kiss
+git clone --branch pymc-tcp-dev --single-branch https://github.com/l34rn3d/KISS_MeshCore_SX1302.git sx1302-meshcore-kiss
 cd sx1302-meshcore-kiss
 sudo ./scripts/install.sh
 ```
@@ -136,7 +136,7 @@ Manual install steps are below for troubleshooting or custom layouts.
 ```bash
 sudo mkdir -p /opt
 cd /opt
-sudo git clone --branch semtech-driver --single-branch https://github.com/l34rn3d/KISS_MeshCore_SX1302.git sx1302-meshcore-kiss
+sudo git clone --branch pymc-tcp-dev --single-branch https://github.com/l34rn3d/KISS_MeshCore_SX1302.git sx1302-meshcore-kiss
 cd /opt/sx1302-meshcore-kiss
 ```
 
@@ -189,13 +189,13 @@ sudo editor /etc/sx1302-meshcore-kiss/config.yaml
 
 Set at least:
 
-- `kiss.mode`, usually `pty`;
-- `kiss.symlink`, usually `/run/sx1302-meshcore-kiss/sx1302-kiss`;
+- `transport: "pymc_tcp"` for the native pyMC TCP path;
+- `pymc_tcp.bind_host` and `pymc_tcp.port`, usually `0.0.0.0:5055`;
 - `dashboard.bind_host`, default `0.0.0.0` for Tailscale/LAN access; use `127.0.0.1` if you want local-only dashboard access;
 - `node_id` and MQTT client/topic names for the individual repeater identity;
 - only change reset GPIO/SPI values if the target is not wired like the known-good cricket SenseCAP/WM1302.
 
-The default bridge radio block is intentionally cricket-aligned for backend/hardware/reset policy. Do **not** swap it back to the old generic fallback values. RF channel values are intentionally owned by pyMC over MeshCore KISS `SetRadio 0x09` and `SetTxPower 0x0A`.
+The default bridge radio block is intentionally cricket-aligned for backend/hardware/reset policy. Do **not** swap it back to the old generic fallback values. RF channel values are intentionally owned by pyMC over native TCP `SET_CONFIG`.
 
 ```yaml
 radio:
@@ -206,7 +206,7 @@ radio:
   sx1261_spi_path: "/dev/spidev0.1"
   reset_enabled: true
   reset_required: false
-  reset_script_path: "/opt/sx1302-meshcore-kiss/tools/reset_wm1302_pinctrl.sh"
+  reset_script_path: "/opt/sx1302-meshcore-kiss/tools/reset_lgw_nebra.sh"
   gpio_chip: "gpiochip0"
   power_enable_pin: 18
   sx1302_reset_pin: 23
@@ -247,15 +247,10 @@ Edit the unit if you install to another path or use another service user.
 
 ## 7. Configure pyMC_Repeater
 
-pyMC_Repeater should not use its direct radio hardware mode for this path. Point it at the daemon-owned KISS PTY. The pyMC `kiss.port` value must match the daemon `kiss.symlink` value in `/etc/sx1302-meshcore-kiss/config.yaml`; the default is `/run/sx1302-meshcore-kiss/sx1302-kiss`. Avoid the old `/tmp/sx1302-kiss` path on systemd hosts because Linux protected-symlink rules can block another service user from following a symlink created in sticky `/tmp`.
-
-For existing installs, change both sides to the same device path:
-
-- SX1302 daemon: `/etc/sx1302-meshcore-kiss/config.yaml` → `kiss.symlink`
-- pyMC_Repeater: `/etc/pymc_repeater/config.yaml` → `kiss.port`
+pyMC_Repeater should not use its direct radio hardware mode for this path. Point it at the daemon-owned native TCP modem on `127.0.0.1:5055`.
 
 ```yaml
-radio_type: kiss
+radio_type: pymc_tcp
 mesh:
   path_hash_mode: 1
 radio:
@@ -265,12 +260,13 @@ radio:
   coding_rate: 5
   sync_word: 13380
   tx_power: 26
-kiss:
-  port: "/run/sx1302-meshcore-kiss/sx1302-kiss"
-  baud_rate: 115200
+pymc_tcp:
+  host: "127.0.0.1"
+  port: 5055
+  token: ""
 ```
 
-Then restart pyMC_Repeater after the KISS daemon is running:
+Then restart pyMC_Repeater after the SX1302 daemon is running:
 
 ```bash
 sudo systemctl restart pymc-repeater.service
@@ -278,7 +274,7 @@ sudo systemctl restart pymc-repeater.service
 
 ## 8. Validate safely
 
-Check the KISS daemon logs:
+Check the daemon logs:
 
 ```bash
 journalctl -u sx1302-meshcore-kiss.service -f
@@ -287,13 +283,14 @@ journalctl -u sx1302-meshcore-kiss.service -f
 Validation goals:
 
 - service starts without Python import errors;
-- daemon creates `/run/sx1302-meshcore-kiss/sx1302-kiss` in PTY mode;
+- dashboard `/api/status` reports `transport: "pymc_tcp"`;
+- dashboard `/api/status` reports `pymc_tcp.connected_clients: 1` after pyMC starts;
 - service user can access SPI and GPIO;
 - GPIO reset sequence completes without permission errors;
 - SX1302/WM1302 start succeeds;
-- pyMC_Repeater opens `/run/sx1302-meshcore-kiss/sx1302-kiss`;
-- pyMC SetHardware requests configure the radio;
-- received good RF packets appear as KISS `Data 0x00`;
+- pyMC_Repeater logs `TCPLoRaRadio initialized successfully`;
+- pyMC TCP `SET_CONFIG` requests configure the radio;
+- received good RF packets appear as pyMC TCP `RX_PACKET` frames;
 - bad CRC packets are counted/published but not forwarded to pyMC;
 - TX is tested only when legal and intentional.
 
@@ -302,18 +299,19 @@ Useful commands:
 ```bash
 systemctl status sx1302-meshcore-kiss.service
 journalctl -u sx1302-meshcore-kiss.service -n 100 --no-pager
-ls -l /run/sx1302-meshcore-kiss/sx1302-kiss
+curl -fsS http://127.0.0.1:8080/api/status
 sudo -u sx1302kiss test -r /dev/spidev0.0 && echo spi_ok
 ```
 
 ## 9. Troubleshooting
 
-### PTY does not appear
+### pyMC TCP does not connect
 
-Check that `kiss.mode` is `pty`, then inspect logs:
+Check that the daemon is listening and pyMC points at it:
 
 ```bash
-grep -n "mode\|symlink" /etc/sx1302-meshcore-kiss/config.yaml
+grep -n "transport\|pymc_tcp\|port" /etc/sx1302-meshcore-kiss/config.yaml
+sudo grep -n "radio_type\|pymc_tcp\|host\|port" /etc/pymc_repeater/config.yaml
 journalctl -u sx1302-meshcore-kiss.service -n 100 --no-pager
 ```
 
@@ -334,11 +332,4 @@ Install `gpiod` and verify the configured GPIO chip and line numbers. Board revi
 
 ### pyMC cannot connect
 
-Confirm the symlink exists and pyMC config points at the same path:
-
-```bash
-ls -l /run/sx1302-meshcore-kiss/sx1302-kiss
-sudo grep -n "radio_type\|kiss:\|port:" /etc/pymc_repeater/config.yaml
-```
-
-pyMC should use `radio_type: kiss`, not direct SX1302/WM1302 hardware mode, when this daemon owns the concentrator.
+pyMC should use `radio_type: pymc_tcp`, not direct SX1302/WM1302 hardware mode, when this daemon owns the concentrator.

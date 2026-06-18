@@ -4,7 +4,7 @@ set -Eeuo pipefail
 APP_NAME="sx1302-meshcore-kiss"
 SERVICE_NAME="sx1302-meshcore-kiss.service"
 REPO_URL="https://github.com/l34rn3d/KISS_MeshCore_SX1302.git"
-BRANCH="semtech-driver"
+BRANCH="pymc-tcp-dev"
 INSTALL_DIR="/opt/sx1302-meshcore-kiss"
 CONFIG_DIR="/etc/sx1302-meshcore-kiss"
 SERVICE_USER="sx1302kiss"
@@ -254,7 +254,8 @@ Install path:  ${INSTALL_DIR}
 Config path:   ${CONFIG_DIR}/config.yaml
 Service user:  ${SERVICE_USER}
 Service:       ${SERVICE_NAME}
-KISS PTY:      /run/sx1302-meshcore-kiss/sx1302-kiss by default
+pyMC TCP:      0.0.0.0:5055 by default
+Dashboard:     http://<device-ip>:8080/
 
 Next steps:
   1. Edit board-specific config:
@@ -263,7 +264,7 @@ Next steps:
      sudo systemctl start ${SERVICE_NAME}
   3. Watch logs:
      journalctl -u ${SERVICE_NAME} -n 100 --no-pager
-  4. Point pyMC_Repeater at the KISS PTY, usually /run/sx1302-meshcore-kiss/sx1302-kiss.
+  4. Point pyMC_Repeater at native pymc_tcp on 127.0.0.1:5055.
 
 SUMMARY
 }
