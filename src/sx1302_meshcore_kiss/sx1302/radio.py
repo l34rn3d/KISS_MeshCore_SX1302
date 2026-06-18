@@ -30,6 +30,7 @@ Example::
 
 import asyncio
 import logging
+import os
 from pathlib import Path
 import subprocess
 import threading
@@ -159,6 +160,8 @@ class SX1302Radio(LoRaRadio):
         reset_required: bool = False,
         gpio_chip: str = "gpiochip0",
         reset_script_path: Optional[str] = None,
+        reset_script_args: Optional[list[str]] = None,
+        reset_script_env: Optional[dict[str, str]] = None,
         power_enable_pin: Optional[int] = 18,
         sx1302_reset_pin: Optional[int] = 17,
         sx1261_reset_pin: Optional[int] = 5,
@@ -177,6 +180,8 @@ class SX1302Radio(LoRaRadio):
         self.reset_required = bool(reset_required)
         self.gpio_chip = gpio_chip
         self.reset_script_path = reset_script_path
+        self.reset_script_args = list(reset_script_args or [])
+        self.reset_script_env = dict(reset_script_env or {})
         self.power_enable_pin = power_enable_pin
         self.sx1302_reset_pin = sx1302_reset_pin
         self.sx1261_reset_pin = sx1261_reset_pin
@@ -833,7 +838,8 @@ class SX1302Radio(LoRaRadio):
             try:
                 script_path = Path(self.reset_script_path)
                 logger.info("SX1302 GPIO reset via script: %s", script_path)
-                result = subprocess.run([str(script_path)], check=False, capture_output=True, text=True, timeout=5)
+                env = {**os.environ, **{str(k): str(v) for k, v in self.reset_script_env.items()}}
+                result = subprocess.run([str(script_path), *self.reset_script_args], check=False, capture_output=True, text=True, timeout=5, env=env)
                 if result.returncode == 0:
                     time.sleep(0.5)
                     logger.debug("GPIO reset script complete")

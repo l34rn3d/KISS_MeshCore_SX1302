@@ -1,5 +1,9 @@
 node_id: "pyRpt-node"
 
+# Select exactly one host interface. Use "pymc_tcp" for native pyMC TCP or
+# "kiss" for the legacy KISS PTY/serial bridge. The daemon will not run both.
+transport: "pymc_tcp"
+
 kiss:
   mode: "pty"
   # Keep this outside /tmp so pyMC can open it even when the bridge and pyMC run as different users.
@@ -9,13 +13,40 @@ kiss:
   tcp_bind: "127.0.0.1"
   tcp_port: 8001
 
+pymc_tcp:
+  # Native pyMC TCP modem protocol for pymc_core.hardware.tcp_radio.TCPLoRaRadio.
+  # This is not KISS-over-TCP.
+  # Used only when transport is "pymc_tcp".
+  enabled: true
+  bind_host: "0.0.0.0"
+  port: 5055
+  token: ""
+  max_clients: 1
+
+startup:
+  # Available profiles are shown on the HTTP dashboard config page:
+  # nebra_helium_docker, sensecap_wm1302_pinctrl, semtech_reset_lgw_sysfs,
+  # gpioset_fallback, no_reset.
+  profile: "nebra_helium_docker"
+  # Select the installed hotspot model in the HTTP dashboard, or set it here.
+  # Examples: sensecap-fl1, rak-fl1, helium-fl1, nebra-indoor1, bobcat-rk3566.
+  hotspot: "sensecap-fl1"
+
+manual_radio:
+  # Enable this to start the radio without waiting for pyMC/KISS to send RF config.
+  # pyMC can still override the RF settings later with CMD_SET_CONFIG.
+  enabled: false
+  # Profiles: meshcore_eu_default, meshcore_eu_docs_legacy, meshcore_us_default,
+  # meshcore_us_repeat, meshcore_433.
+  profile: "meshcore_eu_default"
+  auto_start: true
+
 radio:
   backend: "semtech_c_hal"
   c_hal_lib: "/opt/sx1302-meshcore-kiss/build/c_hal/libmeshcore_lgw.so"
   lorawan_public: false
-  # RF channel settings are intentionally not configured here. The KISS host
-  # must send MeshCore SetRadio/SetTxPower, and the daemon applies those at
-  # runtime before TX/RX starts. Known-good pyMC values are documented below.
+  # RF channel settings are normally supplied by pyMC/KISS. For standalone
+  # hardware testing, enable manual_radio above or set these fields explicitly.
   preamble_len: 17
   sync_word: 5156
   implicit_header: false
@@ -24,7 +55,11 @@ radio:
   sx1261_spi_path: "/dev/spidev0.1"
   reset_enabled: true
   reset_required: false
-  reset_script_path: "/opt/sx1302-meshcore-kiss/tools/reset_wm1302_pinctrl.sh"
+  # Leave unset to use startup.profile defaults, or set explicitly to override.
+  reset_script_path: "/opt/sx1302-meshcore-kiss/tools/reset_lgw_nebra.sh"
+  reset_script_args: ["start"]
+  reset_script_env:
+    CONCENTRATOR_RESET_PIN: "17"
   gpio_chip: "gpiochip0"
   power_enable_pin: 18
   sx1302_reset_pin: 23

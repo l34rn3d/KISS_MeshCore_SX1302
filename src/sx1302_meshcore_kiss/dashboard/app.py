@@ -8,7 +8,7 @@ from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Callable
 
-from sx1302_meshcore_kiss.config import AppConfig, redact_config
+from sx1302_meshcore_kiss.config import AppConfig, apply_hotspot_profile, apply_radio_profile, hotspot_profiles, radio_profiles, redact_config, startup_profiles
 from sx1302_meshcore_kiss.telemetry.counters import Counters
 from sx1302_meshcore_kiss.telemetry.ring_buffer import PacketRingBuffer
 
@@ -98,6 +98,9 @@ def _dashboard_html(node_id: str) -> bytes:
     .log-line {{ color: #dbeafe; border-bottom: 1px solid rgba(38,56,79,.28); padding: .12rem 0; }}
     .log-line.error {{ color: var(--bad); }}
     .log-line.warn {{ color: var(--warn); }}
+    .form-row {{ display: flex; gap: .5rem; margin-top: .75rem; flex-wrap: wrap; }}
+    select, button {{ border: 1px solid var(--border); border-radius: 10px; background: var(--panel-3); color: var(--text); padding: .55rem .65rem; }}
+    button {{ cursor: pointer; background: #075985; font-weight: 700; }}
     @media (max-width: 980px) {{
       .header-inner {{ display: block; }}
       .layout {{ grid-template-columns: 1fr; }}
@@ -127,7 +130,7 @@ def _dashboard_html(node_id: str) -> bytes:
       <article class="card summary"><span class="muted">Radio</span><div class="metric" id="summary-radio">--<small>waiting</small></div></article>
       <article class="card summary"><span class="muted">Link</span><div class="metric" id="summary-link">--<small>frequency</small></div></article>
       <article class="card summary"><span class="muted">Packets</span><div class="metric" id="summary-packets">0 / 0<small>RX good / TX done</small></div></article>
-      <article class="card summary"><span class="muted">Noise</span><div class="metric" id="summary-noise">--<small>floor</small></div></article>
+      <article class="card summary"><span class="muted">Environment</span><div class="metric" id="summary-noise">--<small>temp / noise</small></div></article>
     </section>
     <section class="layout">
       <div class="stack">
@@ -140,6 +143,7 @@ def _dashboard_html(node_id: str) -> bytes:
         </details>
       </div>
       <div class="stack">
+        <article class="card"><div class="card-head"><h2>pyMC TCP</h2><span id="pymc-tcp-badge" class="pill warn">loading</span></div><dl id="pymc-tcp-list"></dl><h3>Hotspot Hardware</h3><dl id="startup-list"></dl><div class="form-row"><select id="hotspot-select" aria-label="Hotspot model"></select><button id="hotspot-apply" type="button">Apply pins</button></div><div class="muted" id="hotspot-help">Select the installed hotspot model to load Nebra reset GPIO and SPI defaults.</div></article>
         <article class="card"><div class="card-head"><h2>KISS / MQTT</h2><span id="kiss-badge" class="pill warn">loading</span></div><dl id="kiss-list"></dl><h3>MQTT</h3><dl id="mqtt-list"></dl></article>
         <article class="card">
           <div class="card-head"><h2>Latest packet events</h2><span class="muted">newest first</span></div>
@@ -190,7 +194,7 @@ def _dashboard_html(node_id: str) -> bytes:
         .map(([k, v]) => `<div class="kv-row"><div class="kv-key">${{esc(title(k))}}</div><div class="kv-val">${{esc(v)}}</div></div>`).join('');
     }}
     function renderConfig(config) {{
-      const groups = ['kiss', 'radio', 'crc', 'mqtt', 'status', 'dashboard', 'logging'];
+      const groups = ['pymc_tcp', 'startup', 'manual_radio', 'kiss', 'radio', 'crc', 'mqtt', 'status', 'dashboard', 'logging'];
       const html = groups.map(g => `<h3>${{esc(g)}}</h3><div class="kv-list">${{renderKvRows(config[g]) || '<div class="muted">No entries</div>'}}</div>`).join('');
       document.getElementById('config-groups').innerHTML = html;
     }}
@@ -198,7 +202,9 @@ def _dashboard_html(node_id: str) -> bytes:
       const c = counters.counters || counters || {{}};
       const wanted = [
         ['rx_good_count', 'RX good'], ['rx_bad_crc_count', 'RX bad CRC'], ['rx_unknown_crc_count', 'RX unknown CRC'], ['rx_dropped_count', 'RX dropped'],
-        ['tx_requested_count', 'TX requested'], ['tx_done_count', 'TX done'], ['tx_error_count', 'TX error'], ['kiss_decode_error_count', 'KISS decode errors'], ['kiss_unknown_command_count', 'KISS unknown']
+        ['tx_requested_count', 'TX requested'], ['tx_done_count', 'TX done'], ['tx_error_count', 'TX error'],
+        ['radio_preamble_count', 'LoRa preambles'], ['radio_syncword_count', 'Sync words'], ['radio_header_valid_count', 'Valid headers'], ['radio_meshcore_candidate_count', 'MeshCore-like'],
+        ['kiss_decode_error_count', 'KISS decode errors'], ['kiss_unknown_command_count', 'KISS unknown']
       ];
       const total = wanted.reduce((sum, [k]) => sum + Number(c[k] || 0), 0);
       document.getElementById('packet-total').textContent = `${{total}} total`;
@@ -244,6 +250,27 @@ def _dashboard_html(node_id: str) -> bytes:
         ['Basic hints', hints.join(' · ')],
       ].filter(([_, v]) => has(v));
     }}
+    function renderHotspotSelector(profiles, current) {{
+      const select = document.getElementById('hotspot-select');
+      if (!select || !profiles) return;
+      const value = select.value || current || '';
+      select.innerHTML = Object.entries(profiles).map(([key, p]) => `<option value="${{esc(key)}}">${{esc(p.friendly || key)}} (${{esc(key)}})</option>`).join('');
+      select.value = profiles[value] ? value : current;
+    }}
+    async function applyHotspot() {{
+      const select = document.getElementById('hotspot-select');
+      const help = document.getElementById('hotspot-help');
+      if (!select?.value) return;
+      try {{
+        const response = await fetch('/api/hotspot-profile', {{method: 'POST', headers: {{'Content-Type': 'application/json'}}, body: JSON.stringify({{hotspot: select.value}})}});
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || response.status);
+        help.textContent = `Applied ${{payload.hotspot}} pins. Restart/reconfigure the radio if it was already running.`;
+        await refresh();
+      }} catch (err) {{
+        help.textContent = `Apply failed: ${{err.message}}`;
+      }}
+    }}
     function eventLines(p) {{
       const radio = p.radio || {{}};
       const meta = p.raw_metadata || {{}};
@@ -271,16 +298,21 @@ def _dashboard_html(node_id: str) -> bytes:
     }}
     async function refresh() {{
       try {{
-        const [status, counters, packets, config] = await Promise.all([
-          getJson('/api/status'), getJson('/api/counters'), getJson('/api/packets'), getJson('/api/config')
+        const [status, counters, packets, config, hotspots] = await Promise.all([
+          getJson('/api/status'), getJson('/api/counters'), getJson('/api/packets'), getJson('/api/config'), getJson('/api/hotspot-profiles')
         ]);
         document.getElementById('node-id').textContent = status.node_id || config.node_id || '{safe_node_id}';
+        const transport = status.transport || config.transport || 'pymc_tcp';
         const radio = status.radio || status.sx1302 || {{}};
         const kiss = status.kiss || {{mode: config.kiss?.mode}};
+        const pymcTcp = status.pymc_tcp || config.pymc_tcp || {{enabled: false}};
+        const startup = status.startup || config.startup || {{}};
         const mqtt = status.mqtt || {{connected: status.mqtt_connected}};
         const sx1302 = radio.sx1302 || {{}};
         const dbg = sx1302.sx1261_rx_debug || radio.sx1261_rx_debug || status.sx1261_rx_debug || {{}};
         const noise = sx1302.last_noise_floor ?? radio.last_noise_floor ?? radio.noise_floor_dbm ?? status.last_noise_floor;
+        const temp = radio.temperature_c ?? sx1302.temperature_c ?? status.temperature_c;
+        const cad = radio.last_cad || sx1302.last_cad || status.last_cad || {{}};
         const txBw = sx1302.hal_bandwidth_hz || radio.hal_bandwidth_hz || radio.bandwidth || radio.bandwidth_hz || radio.bw;
         const rxBackend = sx1302.rx_backend || radio.rx_backend || (dbg.lora_rx_enabled ? 'sx1261' : '');
         const radioState = radio.started ? 'started' : (radio.state || 'waiting for SetRadio');
@@ -289,16 +321,20 @@ def _dashboard_html(node_id: str) -> bytes:
         setBadge('overall-badge', radioState);
         setBadge('sx1261-badge', sx1261State);
         setBadge('kiss-badge', kiss.mode || 'unknown');
+        setBadge('pymc-tcp-badge', transport === 'pymc_tcp' && pymcTcp.enabled ? (pymcTcp.connected_clients ? 'connected' : 'listening') : `transport: ${{transport}}`);
         setBadge('mqtt-badge', mqtt.connected ? 'connected' : 'disabled/down');
-        renderDl('radio-list', [['Started', radio.started], ['Frequency', fmtHz(radio.frequency || radio.frequency_hz || radio.freq_hz)], ['Configured BW', fmtBw(radio.bandwidth || radio.bandwidth_hz || radio.bw)], ['HAL TX BW', fmtBw(sx1302.hal_bandwidth_hz || radio.hal_bandwidth_hz)], ['HAL BW code', sx1302.hal_bandwidth_code || radio.hal_bandwidth_code], ['RX backend', rxBackend], ['Spreading factor', radio.spreading_factor || radio.sf], ['Coding rate', radio.coding_rate || radio.cr], ['TX power', has(radio.tx_power) ? `${{radio.tx_power}} dBm` : radio.tx_power_dbm], ['Current RSSI', has(radio.current_rssi_dbm) ? `${{radio.current_rssi_dbm}} dBm` : ''], ['Noise floor', has(noise) ? `${{noise}} dBm` : ''], ['Channel busy', radio.channel_busy]]);
+        renderDl('radio-list', [['Started', radio.started], ['Frequency', fmtHz(radio.frequency || radio.frequency_hz || radio.freq_hz)], ['Configured BW', fmtBw(radio.bandwidth || radio.bandwidth_hz || radio.bw)], ['HAL TX BW', fmtBw(sx1302.hal_bandwidth_hz || radio.hal_bandwidth_hz)], ['HAL BW code', sx1302.hal_bandwidth_code || radio.hal_bandwidth_code], ['RX backend', rxBackend], ['Spreading factor', radio.spreading_factor || radio.sf], ['Coding rate', radio.coding_rate || radio.cr], ['TX power', has(radio.tx_power) ? `${{radio.tx_power}} dBm` : radio.tx_power_dbm], ['Current RSSI', has(radio.current_rssi_dbm) ? `${{radio.current_rssi_dbm}} dBm` : ''], ['Temperature', has(temp) ? `${{Number(temp).toFixed(1)}} C` : ''], ['Noise floor', has(noise) ? `${{noise}} dBm` : ''], ['Last CAD', has(cad.source) ? `${{cad.busy ? 'busy' : 'clear'}} via ${{cad.method || cad.source}}` : ''], ['CAD params', has(cad.det_peak) || has(cad.det_min) ? `peak=${{cad.det_peak ?? ''}} min=${{cad.det_min ?? ''}}` : ''], ['Channel busy', radio.channel_busy]]);
         renderDiag('sx1261-diag', [['LoRa RX enabled', dbg.lora_rx_enabled], ['Poll count', dbg.poll_count], ['Branch count', dbg.sx1261_branch_count], ['RX done', dbg.rx_done_count], ['CRC err', dbg.crc_err_count], ['Header valid', dbg.header_valid_count], ['Header err', dbg.header_err_count], ['Preamble', dbg.preamble_count], ['Sync word', dbg.syncword_count], ['Last IRQ', dbg.last_irq_flags], ['Last RX size', dbg.last_rx_size], ['Fallback count', dbg.sx1302_fallback_count], ['Last scan', sx1302.last_noise_scan_at || radio.last_noise_scan_at], ['Last scan floor', has(noise) ? `${{noise}} dBm` : '']]);
         renderDl('kiss-list', [['Mode', kiss.mode || config.kiss?.mode], ['PTY symlink', config.kiss?.symlink], ['Serial', config.kiss?.serial_port], ['Baud', config.kiss?.baud_rate], ['MQTT connected', mqtt.connected]]);
+        renderDl('pymc-tcp-list', [['Transport', transport], ['Enabled', transport === 'pymc_tcp' && pymcTcp.enabled], ['Bind', `${{pymcTcp.bind_host || config.pymc_tcp?.bind_host || ''}}:${{pymcTcp.port || config.pymc_tcp?.port || ''}}`], ['Clients', pymcTcp.connected_clients], ['Max clients', pymcTcp.max_clients], ['Auth required', pymcTcp.auth_required]]);
+        renderDl('startup-list', [['Startup profile', startup.profile || config.startup?.profile], ['Hotspot', startup.hotspot || config.startup?.hotspot], ['Reset script', startup.reset_script_path || config.radio?.reset_script_path], ['SPI device', config.radio?.spi_device], ['Concentrator reset pin', config.radio?.sx1302_reset_pin], ['Optional SX125x reset pin', config.radio?.sx1261_reset_pin]]);
+        renderHotspotSelector(hotspots, startup.hotspot || config.startup?.hotspot);
         renderDl('mqtt-list', [['Host', config.mqtt?.host], ['Base topic', config.mqtt?.base_topic], ['Retain status', config.mqtt?.retain_status]]);
         const c = renderCounters(counters);
         setSummary('summary-radio', radioState, [rxBackend || 'rx pending', fmtBw(txBw)].filter(Boolean).join(' · '));
         setSummary('summary-link', fmtHz(radio.frequency || radio.frequency_hz || radio.freq_hz) || '--', [has(radio.spreading_factor || radio.sf) ? `SF${{radio.spreading_factor || radio.sf}}` : '', has(radio.coding_rate || radio.cr) ? `CR4/${{radio.coding_rate || radio.cr}}` : ''].filter(Boolean).join(' · ') || 'not configured');
         setSummary('summary-packets', `${{c.rx_good_count || 0}} / ${{c.tx_done_count || 0}}`, 'RX good / TX done');
-        setSummary('summary-noise', has(noise) ? `${{noise}} dBm` : '--', has(radio.channel_busy) ? `busy: ${{radio.channel_busy}}` : 'floor');
+        setSummary('summary-noise', has(temp) ? `${{Number(temp).toFixed(1)}} C` : (has(noise) ? `${{noise}} dBm` : '--'), has(temp) && has(noise) ? `noise ${{noise}} dBm` : (has(radio.channel_busy) ? `busy: ${{radio.channel_busy}}` : 'temp / noise'));
         renderConfig(config);
         renderPackets(packets || []);
         document.getElementById('updated').textContent = `updated ${{new Date().toLocaleTimeString()}}`;
@@ -327,6 +363,7 @@ def _dashboard_html(node_id: str) -> bytes:
     }}
     refresh();
     startLiveLogs();
+    document.getElementById('hotspot-apply')?.addEventListener('click', applyHotspot);
     setInterval(refresh, 2000);
   </script>
 </body>
@@ -410,6 +447,10 @@ class DashboardServer:
                     self._live_logs()
                     return
                 if path == "/api/counters":
+                    try:
+                        outer.status_provider()
+                    except Exception:
+                        pass
                     self._json(outer.counters.snapshot(node_id=outer.config.node_id, uptime_seconds=0))
                     return
                 if path == "/api/packets":
@@ -417,6 +458,41 @@ class DashboardServer:
                     return
                 if path == "/api/config":
                     self._json(redact_config(outer.config))
+                    return
+                if path == "/api/startup-profiles":
+                    self._json(startup_profiles())
+                    return
+                if path == "/api/hotspot-profiles":
+                    self._json(hotspot_profiles())
+                    return
+                if path == "/api/radio-profiles":
+                    self._json(radio_profiles())
+                    return
+                self._json({"error": "not_found"}, 404)
+
+            def do_POST(self) -> None:
+                path = self.path.split("?", 1)[0]
+                length = int(self.headers.get("Content-Length", "0") or "0")
+                try:
+                    payload = json.loads(self.rfile.read(length) or b"{}")
+                except json.JSONDecodeError:
+                    self._json({"error": "invalid_json"}, 400)
+                    return
+                if path == "/api/hotspot-profile":
+                    hotspot = str(payload.get("hotspot", ""))
+                    if not apply_hotspot_profile(outer.config, hotspot):
+                        self._json({"error": "unknown_hotspot", "hotspot": hotspot}, 400)
+                        return
+                    self._json({"ok": True, "hotspot": hotspot, "config": redact_config(outer.config)})
+                    return
+                if path == "/api/radio-profile":
+                    profile = str(payload.get("profile", ""))
+                    outer.config.manual_radio.enabled = True
+                    outer.config.manual_radio.auto_start = bool(payload.get("auto_start", outer.config.manual_radio.auto_start))
+                    if not apply_radio_profile(outer.config, profile):
+                        self._json({"error": "unknown_radio_profile", "profile": profile}, 400)
+                        return
+                    self._json({"ok": True, "profile": profile, "config": redact_config(outer.config)})
                     return
                 self._json({"error": "not_found"}, 404)
 

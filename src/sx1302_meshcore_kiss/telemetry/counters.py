@@ -16,6 +16,10 @@ class Counters:
     tx_requested_count: int = 0
     tx_done_count: int = 0
     tx_error_count: int = 0
+    radio_preamble_count: int = 0
+    radio_syncword_count: int = 0
+    radio_header_valid_count: int = 0
+    radio_meshcore_candidate_count: int = 0
     kiss_decode_error_count: int = 0
     kiss_unknown_command_count: int = 0
     mqtt_publish_error_count: int = 0

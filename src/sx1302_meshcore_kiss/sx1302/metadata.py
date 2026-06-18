@@ -27,6 +27,8 @@ class RadioConfig:
     reset_required: bool = False
     gpio_chip: str = "gpiochip0"
     reset_script_path: Optional[str] = None
+    reset_script_args: list[str] = field(default_factory=list)
+    reset_script_env: dict[str, str] = field(default_factory=dict)
     power_enable_pin: Optional[int] = 18
     sx1302_reset_pin: Optional[int] = 17
     sx1261_reset_pin: Optional[int] = 5

@@ -1,13 +1,13 @@
 # sx1302-meshcore-kiss
 
-MeshCore-compatible KISS modem daemon for SX1302/WM1302 concentrators.
+MeshCore-compatible pyMC TCP and KISS modem daemon for SX1302/WM1302 concentrators.
 
-This project is **not a pyMC radio implementation** and pyMC does not drive the hardware directly. It is a standalone modem bridge: pyMC/pyMC_Repeater talks normal KISS over a PTY or serial device, while this daemon owns the SX1302/WM1302 hardware using a daemon-local driver layer that follows Semtech `libloragw` / `lgw_*` HAL semantics for board, RF chain, IF chain, RX, TX, status, and airtime operations.
+This branch includes a native pyMC TCP modem implementation for `pymc_core.hardware.tcp_radio.TCPLoRaRadio`. It is **not KISS-over-TCP**: the daemon speaks pyMC's native `0xAA | CMD | LEN | PAYLOAD | CRC16` radio protocol on TCP port `5055` by default, while still keeping the existing KISS PTY/serial bridge for compatibility. The daemon owns the SX1302/WM1302 hardware using a daemon-local driver layer that follows Semtech `libloragw` / `lgw_*` HAL semantics for board, RF chain, IF chain, RX, TX, status, and airtime operations.
 
 ```text
 pyMC_Repeater / pyMC_core
         ⇅
-KISS serial / PTY interface, usually /run/sx1302-meshcore-kiss/sx1302-kiss
+Native pyMC TCP, usually host:5055, or KISS PTY / serial fallback
         ⇅
 sx1302-meshcore-kiss daemon
         ⇅
@@ -20,18 +20,20 @@ SX1302 / SX1303 concentrator + SX1250 radios, e.g. WM1302
 
 ## What this is for
 
-Use this when you want existing MeshCore/pyMC software to treat an SX1302/WM1302 concentrator like a KISS modem without importing or modifying pyMC hardware wrappers.
+Use this when you want existing MeshCore/pyMC software to treat an SX1302/WM1302 concentrator like a native pyMC TCP modem, with KISS kept as a fallback compatibility path.
 
 The daemon is responsible for:
 
-- creating the KISS PTY or opening the configured serial endpoint;
+- listening for native pyMC TCP radio clients;
+- creating the KISS PTY or opening the configured serial endpoint when KISS compatibility is used;
 - accepting MeshCore KISS data and SetHardware control frames;
+- accepting pyMC TCP `SET_CONFIG`, `TX_REQUEST`, status, noise, CAD, and RX-start commands;
 - configuring the SX1302/WM1302 radio from daemon config and host SetHardware requests;
 - resetting and starting the concentrator using board-specific SPI/GPIO settings;
 - transmitting and receiving LoRa packets through the SX1302 driver layer;
-- returning KISS data, `TxDone`, metadata, counters, MQTT telemetry, and dashboard state.
+- returning native pyMC TCP RX/TX/status frames, KISS data, `TxDone`, metadata, counters, MQTT telemetry, and dashboard state.
 
-pyMC/pyMC_Repeater should be configured only as a KISS client.
+pyMC/pyMC_Repeater should use `TCPLoRaRadio` / `pymc_tcp` for this branch unless you explicitly need the older KISS bridge.
 
 ## Status
 
@@ -45,6 +47,7 @@ Current expected test result on a development machine:
 
 ## Implemented
 
+- Native pyMC TCP modem protocol for `TCPLoRaRadio` on `0.0.0.0:5055` by default.
 - Standard KISS framing with `FEND/FESC` escaping.
 - MeshCore KISS `Data 0x00` frames for TX and RX.
 - Standard KISS port-nibble decoding, so `0x10` is handled as Data on port 1.
@@ -78,6 +81,9 @@ Current expected test result on a development machine:
   - `/api/counters`
   - `/api/packets`
   - `/api/config`
+  - `/api/startup-profiles`
+  - `/api/hotspot-profiles`
+  - `/api/hotspot-profile` for selecting the installed hotspot model and applying its SPI/reset GPIO defaults
 - In-memory packet ring buffer only, default max 50 events.
 - Config redaction for secrets.
 - Basic systemd unit example.

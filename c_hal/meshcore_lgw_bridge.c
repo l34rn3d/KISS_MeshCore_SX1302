@@ -46,7 +46,11 @@ static bool g_sx1261_lora_rx_enabled = false;
 #define SX1261_IRQ_HEADER_VALID 0x0010
 #define SX1261_IRQ_HEADER_ERR 0x0020
 #define SX1261_IRQ_CRC_ERR 0x0040
+#define SX1261_IRQ_CAD_DONE 0x0080
+#define SX1261_IRQ_CAD_DETECTED 0x0100
 #define SX1261_IRQ_TIMEOUT 0x0200
+#define SX1261_SET_CAD_PARAMS 0x88
+#define SX1261_SET_CAD 0xC5
 
 struct mc_sx1261_debug_s {
     uint32_t receive_entry_count;
@@ -171,6 +175,65 @@ static int sx1261_configure_lora_rx(void) {
     if (sx1261_reg_w(SX1261_SET_RX, buff, 3) != LGW_REG_SUCCESS) return LGW_HAL_ERROR;
 
     g_sx1261_lora_rx_enabled = true;
+    return LGW_HAL_SUCCESS;
+}
+
+static int sx1261_configure_lora_common(uint16_t irq_mask) {
+    uint8_t buff[16];
+    int32_t freq_reg;
+    uint8_t ldro = (((uint64_t)1 << g_sf) * 1000ULL / g_bw_hz) >= 16 ? 1 : 0;
+
+    if (!g_sx1261_enabled) return LGW_HAL_ERROR;
+
+    buff[0] = SX1261_STDBY_RC;
+    if (sx1261_reg_w(SX1261_SET_STANDBY, buff, 1) != LGW_REG_SUCCESS) return LGW_HAL_ERROR;
+
+    if (sx1261_reg_w(SX1261_SET_FS, buff, 0) != LGW_REG_SUCCESS) return LGW_HAL_ERROR;
+
+    freq_reg = SX1261_FREQ_TO_REG(g_freq_hz);
+    buff[0] = (uint8_t)(freq_reg >> 24);
+    buff[1] = (uint8_t)(freq_reg >> 16);
+    buff[2] = (uint8_t)(freq_reg >> 8);
+    buff[3] = (uint8_t)(freq_reg >> 0);
+    if (sx1261_reg_w(SX1261_SET_RF_FREQUENCY, buff, 4) != LGW_REG_SUCCESS) return LGW_HAL_ERROR;
+
+    buff[0] = SX1261_PACKET_TYPE_LORA;
+    if (sx1261_reg_w(SX1261_SET_PACKET_TYPE, buff, 1) != LGW_REG_SUCCESS) return LGW_HAL_ERROR;
+
+    buff[0] = g_sf;
+    buff[1] = map_sx1261_lora_bw(g_bw_hz);
+    buff[2] = g_cr;
+    buff[3] = ldro;
+    if (sx1261_reg_w(SX1261_SET_MODULATION_PARAMS, buff, 4) != LGW_REG_SUCCESS) return LGW_HAL_ERROR;
+
+    buff[0] = 0x07;
+    buff[1] = 0x40;
+    buff[2] = (uint8_t)(g_sync_word >> 8);
+    buff[3] = (uint8_t)(g_sync_word >> 0);
+    if (sx1261_reg_w(SX1261_WRITE_REGISTER, buff, 4) != LGW_REG_SUCCESS) return LGW_HAL_ERROR;
+
+    buff[0] = (uint8_t)(g_preamble >> 8);
+    buff[1] = (uint8_t)(g_preamble >> 0);
+    buff[2] = g_no_header ? 0x01 : 0x00;
+    buff[3] = 0xFF;
+    buff[4] = 0x01;
+    buff[5] = g_invert ? 0x01 : 0x00;
+    if (sx1261_reg_w(SX1261_SET_PACKET_PARAMS, buff, 6) != LGW_REG_SUCCESS) return LGW_HAL_ERROR;
+
+    buff[0] = (uint8_t)(irq_mask >> 8);
+    buff[1] = (uint8_t)(irq_mask >> 0);
+    buff[2] = 0x00;
+    buff[3] = 0x00;
+    buff[4] = 0x00;
+    buff[5] = 0x00;
+    buff[6] = 0x00;
+    buff[7] = 0x00;
+    if (sx1261_reg_w(SX1261_SET_DIO_IRQ_PARAMS, buff, 8) != LGW_REG_SUCCESS) return LGW_HAL_ERROR;
+
+    buff[0] = 0xFF;
+    buff[1] = 0xFF;
+    if (sx1261_reg_w(SX1261_CLR_IRQ_STATUS, buff, 2) != LGW_REG_SUCCESS) return LGW_HAL_ERROR;
+
     return LGW_HAL_SUCCESS;
 }
 
@@ -490,6 +553,69 @@ int mc_lgw_sx1261_debug(struct mc_sx1261_debug_s *out_debug) {
     if (out_debug == NULL) return LGW_HAL_ERROR;
     memcpy(out_debug, &g_sx1261_debug, sizeof(*out_debug));
     return LGW_HAL_SUCCESS;
+}
+
+int mc_lgw_sx1261_cad(uint8_t sym_num, uint8_t det_peak, uint8_t det_min, uint8_t exit_mode, uint32_t timeout_ms, uint8_t *busy_out) {
+    uint8_t buff[8];
+    uint64_t deadline;
+    bool restore_lora_rx = g_sx1261_lora_rx_enabled;
+    uint16_t irq_flags = 0;
+
+    if (!g_sx1261_enabled || busy_out == NULL) return LGW_HAL_ERROR;
+    if (sym_num == 0) sym_num = 0x01;      /* CAD_ON_2_SYMB */
+    if (det_peak == 0) det_peak = 22;      /* SX126x LoRa CAD common default */
+    if (det_min == 0) det_min = 10;
+    if (timeout_ms == 0) timeout_ms = 500;
+    *busy_out = 0;
+
+    g_sx1261_lora_rx_enabled = false;
+    if (sx1261_configure_lora_common(SX1261_IRQ_CAD_DONE | SX1261_IRQ_CAD_DETECTED | SX1261_IRQ_TIMEOUT) != LGW_HAL_SUCCESS) {
+        if (restore_lora_rx) (void)sx1261_configure_lora_rx();
+        return LGW_HAL_ERROR;
+    }
+
+    buff[0] = sym_num;
+    buff[1] = det_peak;
+    buff[2] = det_min;
+    buff[3] = exit_mode;
+    buff[4] = 0x00;
+    buff[5] = 0x00;
+    buff[6] = 0x00;
+    if (sx1261_reg_w((sx1261_op_code_t)SX1261_SET_CAD_PARAMS, buff, 7) != LGW_REG_SUCCESS) {
+        if (restore_lora_rx) (void)sx1261_configure_lora_rx();
+        return LGW_HAL_ERROR;
+    }
+
+    if (sx1261_reg_w((sx1261_op_code_t)SX1261_SET_CAD, buff, 0) != LGW_REG_SUCCESS) {
+        if (restore_lora_rx) (void)sx1261_configure_lora_rx();
+        return LGW_HAL_ERROR;
+    }
+
+    deadline = monotonic_ms() + timeout_ms;
+    do {
+        uint8_t irq[3] = {0};
+        if (sx1261_reg_r(SX1261_GET_IRQ_STATUS, irq, 3) != LGW_REG_SUCCESS) {
+            if (restore_lora_rx) (void)sx1261_configure_lora_rx();
+            return LGW_HAL_ERROR;
+        }
+        irq_flags = ((uint16_t)irq[1] << 8) | irq[2];
+        if ((irq_flags & (SX1261_IRQ_CAD_DONE | SX1261_IRQ_CAD_DETECTED | SX1261_IRQ_TIMEOUT)) != 0) break;
+        struct timeval sleep_tv = {0, 10 * 1000};
+        select(0, NULL, NULL, NULL, &sleep_tv);
+    } while (monotonic_ms() < deadline);
+
+    buff[0] = (uint8_t)(irq_flags >> 8);
+    buff[1] = (uint8_t)(irq_flags >> 0);
+    (void)sx1261_reg_w(SX1261_CLR_IRQ_STATUS, buff, 2);
+
+    *busy_out = (irq_flags & SX1261_IRQ_CAD_DETECTED) ? 1 : 0;
+    if (restore_lora_rx) (void)sx1261_configure_lora_rx();
+    return (irq_flags == 0) ? LGW_HAL_ERROR : LGW_HAL_SUCCESS;
+}
+
+int mc_lgw_get_temperature(float *temperature_c) {
+    if (temperature_c == NULL) return LGW_HAL_ERROR;
+    return lgw_get_temperature(temperature_c);
 }
 
 const char *mc_lgw_version(void) {

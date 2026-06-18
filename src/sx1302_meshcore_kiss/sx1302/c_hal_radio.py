@@ -113,8 +113,10 @@ class SemtechCHalRadio(SX1302Radio):
         self._pending_rx: list[_McRxPacket] = []
         self._last_status_code: Optional[int] = None
         self._last_lbt: dict[str, Any] = {"attempts": 0, "channel_busy": False, "backoff_delays_ms": []}
+        self._last_cad: dict[str, Any] = {"busy": False, "source": "never_run", "method": "sx1302_lbt"}
         self._last_noise_floor: Optional[float] = None
         self._last_noise_scan_at: float = 0.0
+        self._last_temperature_c: Optional[float] = None
         self._radio_use_depth = 0
 
     @staticmethod
@@ -162,6 +164,12 @@ class SemtechCHalRadio(SX1302Radio):
         if hasattr(lib, "mc_lgw_sx1261_debug"):
             lib.mc_lgw_sx1261_debug.argtypes = [ctypes.POINTER(_McSx1261Debug)]
             lib.mc_lgw_sx1261_debug.restype = ctypes.c_int
+        if hasattr(lib, "mc_lgw_sx1261_cad"):
+            lib.mc_lgw_sx1261_cad.argtypes = [ctypes.c_uint8, ctypes.c_uint8, ctypes.c_uint8, ctypes.c_uint8, ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint8)]
+            lib.mc_lgw_sx1261_cad.restype = ctypes.c_int
+        if hasattr(lib, "mc_lgw_get_temperature"):
+            lib.mc_lgw_get_temperature.argtypes = [ctypes.POINTER(ctypes.c_float)]
+            lib.mc_lgw_get_temperature.restype = ctypes.c_int
         lib.mc_lgw_version.argtypes = []
         lib.mc_lgw_version.restype = ctypes.c_char_p
         return lib
@@ -288,6 +296,53 @@ class SemtechCHalRadio(SX1302Radio):
                 return False
             await asyncio.sleep(0.01)
 
+    async def perform_cad(self, *, sym_num: int | None = None, det_peak: int | None = None, det_min: int | None = None, exit_mode: int | None = None, timeout: float = 0.5, **_: Any) -> bool:
+        if self.sx1261_spi_path and hasattr(self._lib, "mc_lgw_sx1261_cad"):
+            out = ctypes.c_uint8(0)
+            timeout_ms = max(1, int(float(timeout) * 1000.0))
+            symbols = int(sym_num if sym_num is not None else 0x01) & 0xFF
+            peak = int(det_peak if det_peak is not None else 22) & 0xFF
+            min_val = int(det_min if det_min is not None else 10) & 0xFF
+            exit_val = int(exit_mode if exit_mode is not None else 0x00) & 0xFF
+            self._radio_use_depth += 1
+            try:
+                ret = await asyncio.to_thread(self._lib.mc_lgw_sx1261_cad, symbols, peak, min_val, exit_val, timeout_ms, ctypes.byref(out))
+            finally:
+                self._radio_use_depth = max(0, self._radio_use_depth - 1)
+            if ret == LGW_HAL_SUCCESS:
+                busy = bool(out.value)
+                self._last_cad = {
+                    "busy": busy,
+                    "source": "sx1261_irq",
+                    "method": "sx1261_native_cad",
+                    "sym_num": symbols,
+                    "det_peak": peak,
+                    "det_min": min_val,
+                    "exit_mode": exit_val,
+                    "timeout_ms": timeout_ms,
+                }
+                return busy
+            logger.warning("SX1261 native CAD failed with code %s; falling back to SX1302 LBT/busy path", ret)
+
+        old_timeout = self.lbt_cad_timeout_ms
+        self.lbt_cad_timeout_ms = max(1, int(float(timeout) * 1000.0))
+        try:
+            busy = await self._lbt_channel_busy()
+        finally:
+            self.lbt_cad_timeout_ms = old_timeout
+        self._last_cad = {
+            "busy": bool(busy),
+            "source": "sx1302_lbt_or_rx",
+            "method": "sx1302_lbt",
+            "sym_num": sym_num,
+            "det_peak": det_peak,
+            "det_min": det_min,
+            "exit_mode": exit_mode,
+            "timeout_ms": int(float(timeout) * 1000.0),
+            "last_lbt": dict(self._last_lbt),
+        }
+        return bool(busy)
+
     def get_airtime(self, payload: Any) -> int:
         if isinstance(payload, (bytes, bytearray, memoryview)):
             payload_len = len(payload)
@@ -310,6 +365,19 @@ class SemtechCHalRadio(SX1302Radio):
 
     def get_noise_floor(self) -> Optional[float]:
         return self.scan_noise_floor_if_idle()
+
+    def get_temperature(self) -> Optional[float]:
+        if not self._is_started or not hasattr(self._lib, "mc_lgw_get_temperature"):
+            return self._last_temperature_c
+        out = ctypes.c_float(0.0)
+        try:
+            ret = self._lib.mc_lgw_get_temperature(ctypes.byref(out))
+        except Exception:
+            logger.exception("mc_lgw_get_temperature failed")
+            return self._last_temperature_c
+        if ret == LGW_HAL_SUCCESS:
+            self._last_temperature_c = float(out.value)
+        return self._last_temperature_c
 
     def scan_noise_floor_if_idle(self) -> Optional[float]:
         """Refresh the SX1261 spectral-scan noise floor only when it is safe.
@@ -435,9 +503,11 @@ class SemtechCHalRadio(SX1302Radio):
             "tx_status": int(code.value) if status_ret == LGW_HAL_SUCCESS else self._last_status_code,
             "lbt_enabled": self.lbt_enabled,
             "last_lbt": dict(self._last_lbt),
+            "last_cad": dict(self._last_cad),
             "sx1261_configured": self.sx1261_spi_path is not None,
             "last_noise_floor": self._last_noise_floor,
             "last_noise_scan_at": self._last_noise_scan_at,
+            "temperature_c": self.get_temperature(),
             "experimental_62k5_if_chain": self._lib.mc_lgw_experimental_62k5_if_chain() if hasattr(self._lib, "mc_lgw_experimental_62k5_if_chain") else 2,
             "hal_bandwidth_code": self._lib.mc_lgw_bandwidth_code() if hasattr(self._lib, "mc_lgw_bandwidth_code") else None,
             "hal_bandwidth_hz": self._lib.mc_lgw_bandwidth_hz() if hasattr(self._lib, "mc_lgw_bandwidth_hz") else None,

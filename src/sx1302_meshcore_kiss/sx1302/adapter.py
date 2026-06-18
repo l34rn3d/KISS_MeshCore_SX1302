@@ -22,10 +22,22 @@ class SX1302Adapter:
         self.radio_factory = radio_factory
         self.config = RadioConfig()
         self.radio: Any = None
+        self._radio_signature: tuple[tuple[str, Any], ...] | None = None
         self._started = False
         self.receive_call_count = 0
         self.receive_waiting = False
         self.last_receive_error: str | None = None
+        self.last_cad: dict[str, Any] = {"busy": False, "source": "never_run", "method": "none"}
+
+    @staticmethod
+    def _signature_value(value: Any) -> Any:
+        if isinstance(value, dict):
+            return tuple(sorted((k, SX1302Adapter._signature_value(v)) for k, v in value.items()))
+        if isinstance(value, (list, tuple)):
+            return tuple(SX1302Adapter._signature_value(v) for v in value)
+        if isinstance(value, set):
+            return tuple(sorted(SX1302Adapter._signature_value(v) for v in value))
+        return value
 
     @staticmethod
     def has_rf_config(config: RadioConfig) -> bool:
@@ -68,6 +80,8 @@ class SX1302Adapter:
             reset_required=config.reset_required,
             gpio_chip=config.gpio_chip,
             reset_script_path=config.reset_script_path,
+            reset_script_args=config.reset_script_args,
+            reset_script_env=config.reset_script_env,
             power_enable_pin=config.power_enable_pin,
             sx1302_reset_pin=config.sx1302_reset_pin,
             sx1261_reset_pin=config.sx1261_reset_pin,
@@ -84,18 +98,23 @@ class SX1302Adapter:
             kwargs["lorawan_public"] = config.lorawan_public
             kwargs["implicit_header"] = config.implicit_header
             kwargs["invert_iq"] = config.invert_iq
+        signature = tuple((key, self._signature_value(value)) for key, value in sorted(kwargs.items()))
+        if self.radio is not None and signature == self._radio_signature:
+            return
         self.radio = radio_factory(**kwargs)
+        self._radio_signature = signature
         if old_radio is not None and old_radio is not self.radio and hasattr(old_radio, "cleanup"):
             old_radio.cleanup()
         if self._started:
             self.radio.begin()
 
     async def start(self) -> None:
+        already_started = self._started
         self._started = True
         logger.info("SX1302 adapter start requested")
         if self.radio is None:
             await self.configure(self.config)
-        if self.radio is not None:
+        if self.radio is not None and not already_started:
             self.radio.begin()
 
     async def stop(self) -> None:
@@ -163,16 +182,70 @@ class SX1302Adapter:
             return self.radio.get_last_rssi()
         return None
 
+    def get_last_snr(self) -> Optional[float]:
+        if self.radio is not None and hasattr(self.radio, "get_last_snr"):
+            return self.radio.get_last_snr()
+        status = self.radio.get_status() if self.radio is not None and hasattr(self.radio, "get_status") else {}
+        value = status.get("last_snr") or status.get("snr")
+        return float(value) if value is not None else None
+
     def get_noise_floor(self) -> Optional[float]:
         if self.radio is not None and hasattr(self.radio, "get_noise_floor"):
             return self.radio.get_noise_floor()
         return None
+
+    def get_temperature(self) -> Optional[float]:
+        if self.radio is not None and hasattr(self.radio, "get_temperature"):
+            return self.radio.get_temperature()
+        status = self.radio.get_status() if self.radio is not None and hasattr(self.radio, "get_status") else {}
+        value = status.get("temperature_c") or status.get("temp_c")
+        return float(value) if value is not None else None
 
     def is_channel_busy(self) -> bool:
         if self.radio is not None and hasattr(self.radio, "is_channel_busy"):
             return bool(self.radio.is_channel_busy())
         status = self.radio.get_status() if self.radio is not None and hasattr(self.radio, "get_status") else {}
         return str(status.get("tx_status", "")).lower() in {"emitting", "scheduled"}
+
+    async def perform_cad(self, *, sym_num: int | None = None, det_peak: int | None = None, det_min: int | None = None, exit_mode: int | None = None, timeout: float = 0.5) -> bool:
+        if self.radio is None:
+            self.last_cad = {"busy": False, "source": "not_configured", "method": "none", "error": "radio not configured"}
+            raise RuntimeError("SX1302Adapter not configured")
+        if hasattr(self.radio, "perform_cad"):
+            try:
+                busy = bool(await self.radio.perform_cad(sym_num=sym_num, det_peak=det_peak, det_min=det_min, exit_mode=exit_mode, timeout=timeout))
+                status = self.radio.get_status() if hasattr(self.radio, "get_status") else {}
+                raw_cad = status.get("last_cad") if isinstance(status, dict) else None
+                self.last_cad = {
+                    "busy": busy,
+                    "source": "backend_perform_cad",
+                    "method": str((raw_cad or {}).get("method") or (raw_cad or {}).get("source") or "backend"),
+                    "det_peak": det_peak,
+                    "det_min": det_min,
+                    "sym_num": sym_num,
+                    "exit_mode": exit_mode,
+                    "timeout_ms": int(float(timeout) * 1000.0),
+                    "raw": dict(raw_cad or {}) if isinstance(raw_cad, dict) else {},
+                }
+                return busy
+            except Exception as exc:
+                self.last_cad = {"busy": False, "source": "backend_error", "method": "backend", "error": str(exc)}
+                raise
+        busy = self.is_channel_busy()
+        self.last_cad = {
+            "busy": bool(busy),
+            "source": "channel_busy_fallback",
+            "method": "sx1302_busy_fallback",
+            "det_peak": det_peak,
+            "det_min": det_min,
+            "sym_num": sym_num,
+            "exit_mode": exit_mode,
+            "timeout_ms": int(float(timeout) * 1000.0),
+        }
+        return bool(busy)
+
+    def get_cad_status(self) -> dict[str, Any]:
+        return dict(self.last_cad)
 
     async def get_stats(self) -> SX1302Stats:
         status = self.radio.get_status() if self.radio is not None and hasattr(self.radio, "get_status") else {}
