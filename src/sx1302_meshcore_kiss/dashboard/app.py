@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import html
 import json
+import os
 import threading
 import time
+from dataclasses import asdict
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Callable
+
+import yaml
 
 from sx1302_meshcore_kiss.config import AppConfig, apply_hotspot_profile, apply_radio_profile, hotspot_profiles, radio_profiles, redact_config, startup_profiles
 from sx1302_meshcore_kiss.telemetry.counters import Counters
@@ -20,7 +24,7 @@ def _dashboard_html(node_id: str) -> bytes:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>SX1302 MeshCore KISS - {safe_node_id}</title>
+  <title>SX1302 MeshCore Driver - {safe_node_id}</title>
   <style>
     :root {{
       color-scheme: dark;
@@ -101,6 +105,7 @@ def _dashboard_html(node_id: str) -> bytes:
     .form-row {{ display: flex; gap: .5rem; margin-top: .75rem; flex-wrap: wrap; }}
     select, button {{ border: 1px solid var(--border); border-radius: 10px; background: var(--panel-3); color: var(--text); padding: .55rem .65rem; }}
     button {{ cursor: pointer; background: #075985; font-weight: 700; }}
+    button.danger {{ background: #9f1239; }}
     @media (max-width: 980px) {{
       .header-inner {{ display: block; }}
       .layout {{ grid-template-columns: 1fr; }}
@@ -119,7 +124,7 @@ def _dashboard_html(node_id: str) -> bytes:
   <header>
     <div class="header-inner">
       <div>
-        <h1>SX1302 MeshCore KISS</h1>
+        <h1>SX1302 MeshCore Driver</h1>
         <div class="subtitle">Node <strong id="node-id">{safe_node_id}</strong> · <span id="updated">loading…</span></div>
       </div>
       <span id="overall-badge" class="pill warn">starting</span>
@@ -143,8 +148,8 @@ def _dashboard_html(node_id: str) -> bytes:
         </details>
       </div>
       <div class="stack">
-        <article class="card"><div class="card-head"><h2>pyMC TCP</h2><span id="pymc-tcp-badge" class="pill warn">loading</span></div><dl id="pymc-tcp-list"></dl><h3>Hotspot Hardware</h3><dl id="startup-list"></dl><div class="form-row"><select id="hotspot-select" aria-label="Hotspot model"></select><button id="hotspot-apply" type="button">Apply pins</button></div><div class="muted" id="hotspot-help">Select the installed hotspot model to load Nebra reset GPIO and SPI defaults.</div></article>
-        <article class="card"><div class="card-head"><h2>KISS / MQTT</h2><span id="kiss-badge" class="pill warn">loading</span></div><dl id="kiss-list"></dl><h3>MQTT</h3><dl id="mqtt-list"></dl></article>
+        <article class="card"><div class="card-head"><h2>Host Interface</h2><span id="pymc-tcp-badge" class="pill warn">loading</span></div><dl id="pymc-tcp-list"></dl><h3>Transport</h3><div class="form-row"><select id="transport-select" aria-label="Host transport"><option value="pymc_tcp">pyMC TCP</option><option value="kiss">Standalone KISS</option></select><button id="transport-apply" type="button">Save transport</button><button id="service-restart" class="danger" type="button">Restart service</button></div><div class="muted" id="transport-help">Changing transport is saved to config and takes effect after restart.</div><h3>Hotspot Hardware</h3><dl id="startup-list"></dl><div class="form-row"><select id="hotspot-select" aria-label="Hotspot model"></select><button id="hotspot-apply" type="button">Apply pins</button></div><div class="muted" id="hotspot-help">Select the installed hotspot model to load Nebra reset GPIO and SPI defaults.</div></article>
+        <article class="card"><div class="card-head"><h2>Compatibility / MQTT</h2><span id="kiss-badge" class="pill warn">loading</span></div><dl id="kiss-list"></dl><h3>MQTT</h3><dl id="mqtt-list"></dl></article>
         <article class="card">
           <div class="card-head"><h2>Latest packet events</h2><span class="muted">newest first</span></div>
           <div id="packet-list" class="event-list"><div class="empty">Loading packet events…</div></div>
@@ -257,6 +262,37 @@ def _dashboard_html(node_id: str) -> bytes:
       select.innerHTML = Object.entries(profiles).map(([key, p]) => `<option value="${{esc(key)}}">${{esc(p.friendly || key)}} (${{esc(key)}})</option>`).join('');
       select.value = profiles[value] ? value : current;
     }}
+    function renderTransportSelector(current) {{
+      const select = document.getElementById('transport-select');
+      if (!select) return;
+      select.value = current === 'kiss' ? 'kiss' : 'pymc_tcp';
+    }}
+    async function applyTransport() {{
+      const select = document.getElementById('transport-select');
+      const help = document.getElementById('transport-help');
+      if (!select?.value) return;
+      try {{
+        const response = await fetch('/api/transport', {{method: 'POST', headers: {{'Content-Type': 'application/json'}}, body: JSON.stringify({{transport: select.value}})}});
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || response.status);
+        help.textContent = `Saved transport ${{payload.transport}}. Restart the service to apply it.`;
+        await refresh();
+      }} catch (err) {{
+        help.textContent = `Save failed: ${{err.message}}`;
+      }}
+    }}
+    async function restartService() {{
+      const help = document.getElementById('transport-help');
+      if (!confirm('Restart sx1302-meshcore-kiss now? The dashboard will disconnect briefly.')) return;
+      try {{
+        const response = await fetch('/api/restart', {{method: 'POST', headers: {{'Content-Type': 'application/json'}}, body: '{{}}'}});
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || response.status);
+        help.textContent = 'Restart requested. Refresh this page in a few seconds.';
+      }} catch (err) {{
+        help.textContent = `Restart failed: ${{err.message}}`;
+      }}
+    }}
     async function applyHotspot() {{
       const select = document.getElementById('hotspot-select');
       const help = document.getElementById('hotspot-help');
@@ -327,6 +363,7 @@ def _dashboard_html(node_id: str) -> bytes:
         renderDiag('sx1261-diag', [['LoRa RX enabled', dbg.lora_rx_enabled], ['Poll count', dbg.poll_count], ['Branch count', dbg.sx1261_branch_count], ['RX done', dbg.rx_done_count], ['CRC err', dbg.crc_err_count], ['Header valid', dbg.header_valid_count], ['Header err', dbg.header_err_count], ['Preamble', dbg.preamble_count], ['Sync word', dbg.syncword_count], ['Last IRQ', dbg.last_irq_flags], ['Last RX size', dbg.last_rx_size], ['Fallback count', dbg.sx1302_fallback_count], ['Last scan', sx1302.last_noise_scan_at || radio.last_noise_scan_at], ['Last scan floor', has(noise) ? `${{noise}} dBm` : '']]);
         renderDl('kiss-list', [['Mode', kiss.mode || config.kiss?.mode], ['PTY symlink', config.kiss?.symlink], ['Serial', config.kiss?.serial_port], ['Baud', config.kiss?.baud_rate], ['MQTT connected', mqtt.connected]]);
         renderDl('pymc-tcp-list', [['Transport', transport], ['Enabled', transport === 'pymc_tcp' && pymcTcp.enabled], ['Bind', `${{pymcTcp.bind_host || config.pymc_tcp?.bind_host || ''}}:${{pymcTcp.port || config.pymc_tcp?.port || ''}}`], ['Clients', pymcTcp.connected_clients], ['Max clients', pymcTcp.max_clients], ['Auth required', pymcTcp.auth_required]]);
+        renderTransportSelector(transport);
         renderDl('startup-list', [['Startup profile', startup.profile || config.startup?.profile], ['Hotspot', startup.hotspot || config.startup?.hotspot], ['Reset script', startup.reset_script_path || config.radio?.reset_script_path], ['SPI device', config.radio?.spi_device], ['Concentrator reset pin', config.radio?.sx1302_reset_pin], ['Optional SX125x reset pin', config.radio?.sx1261_reset_pin]]);
         renderHotspotSelector(hotspots, startup.hotspot || config.startup?.hotspot);
         renderDl('mqtt-list', [['Host', config.mqtt?.host], ['Base topic', config.mqtt?.base_topic], ['Retain status', config.mqtt?.retain_status]]);
@@ -363,6 +400,8 @@ def _dashboard_html(node_id: str) -> bytes:
     }}
     refresh();
     startLiveLogs();
+    document.getElementById('transport-apply')?.addEventListener('click', applyTransport);
+    document.getElementById('service-restart')?.addEventListener('click', restartService);
     document.getElementById('hotspot-apply')?.addEventListener('click', applyHotspot);
     setInterval(refresh, 2000);
   </script>
@@ -372,15 +411,30 @@ def _dashboard_html(node_id: str) -> bytes:
 
 
 class DashboardServer:
-    def __init__(self, *, config: AppConfig, counters: Counters, ring: PacketRingBuffer, status_provider: Callable[[], dict[str, Any]] | None = None) -> None:
+    def __init__(self, *, config: AppConfig, counters: Counters, ring: PacketRingBuffer, status_provider: Callable[[], dict[str, Any]] | None = None, config_path: str | Path | None = None) -> None:
         self.config = config
         self.counters = counters
         self.ring = ring
         self.status_provider = status_provider or (lambda: {})
+        self.config_path = Path(config_path) if config_path is not None else None
         self.bind_host = config.dashboard.bind_host
         self.port = int(config.dashboard.port)
         self._server = None
         self._thread = None
+
+    def _save_config(self) -> None:
+        if self.config_path is None:
+            return
+        self.config_path.parent.mkdir(parents=True, exist_ok=True)
+        text = yaml.safe_dump(asdict(self.config), sort_keys=False)
+        self.config_path.write_text(text, encoding="utf-8")
+
+    @staticmethod
+    def _restart_process_later(delay: float = 0.35) -> None:
+        def _restart() -> None:
+            time.sleep(delay)
+            os._exit(0)
+        threading.Thread(target=_restart, daemon=True).start()
 
     def start(self) -> None:
         outer = self
@@ -483,6 +537,7 @@ class DashboardServer:
                     if not apply_hotspot_profile(outer.config, hotspot):
                         self._json({"error": "unknown_hotspot", "hotspot": hotspot}, 400)
                         return
+                    outer._save_config()
                     self._json({"ok": True, "hotspot": hotspot, "config": redact_config(outer.config)})
                     return
                 if path == "/api/radio-profile":
@@ -492,7 +547,23 @@ class DashboardServer:
                     if not apply_radio_profile(outer.config, profile):
                         self._json({"error": "unknown_radio_profile", "profile": profile}, 400)
                         return
+                    outer._save_config()
                     self._json({"ok": True, "profile": profile, "config": redact_config(outer.config)})
+                    return
+                if path == "/api/transport":
+                    transport = str(payload.get("transport", "")).lower()
+                    if transport not in {"pymc_tcp", "kiss"}:
+                        self._json({"error": "invalid_transport", "transport": transport}, 400)
+                        return
+                    outer.config.transport = transport
+                    outer.config.pymc_tcp.enabled = transport == "pymc_tcp"
+                    outer._save_config()
+                    self._json({"ok": True, "transport": transport, "restart_required": True, "config": redact_config(outer.config)})
+                    return
+                if path == "/api/restart":
+                    outer._save_config()
+                    outer._restart_process_later()
+                    self._json({"ok": True, "restart": "scheduled"})
                     return
                 self._json({"error": "not_found"}, 404)
 

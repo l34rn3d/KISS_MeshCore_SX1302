@@ -265,6 +265,7 @@ async def run(config_path: str) -> None:
             counters=counters,
             ring=ring,
             status_provider=_build_status_provider(cfg=cfg, adapter=adapter, mqtt=mqtt, counters=counters, pymc_tcp=pymc_tcp),
+            config_path=config_path,
         )
         if cfg.dashboard.enabled
         else None

@@ -1,6 +1,6 @@
 # SenseCAP Cricket Test Deploy
 
-Use this checklist to redeploy the native pyMC TCP SX1302 driver on `sensecap-cricket` from a clean removal.
+Use this checklist to redeploy the SX1302 driver service on `sensecap-cricket` from a clean removal.
 
 ## 1. Clean Existing Driver
 
@@ -54,7 +54,7 @@ radio:
 
 ## 4. Configure pyMC Repeater
 
-Edit `/etc/pymc_repeater/config.yaml` so pyMC uses native TCP instead of KISS:
+Edit `/etc/pymc_repeater/config.yaml` so pyMC uses the driver service instead of direct radio hardware:
 
 ```yaml
 radio_type: pymc_tcp
@@ -94,8 +94,8 @@ Healthy signs:
 
 - `sx1302-meshcore-kiss` is active.
 - `pymc-repeater` is active.
-- SX1302 dashboard status shows `transport: "pymc_tcp"`.
-- SX1302 dashboard status shows `pymc_tcp.connected_clients: 1` after pyMC starts.
+- SX1302 dashboard status shows the expected host transport.
+- SX1302 dashboard status shows one connected pyMC client after pyMC starts.
 - pyMC `/api/needs_setup` returns `"needs_setup": false`.
 - pyMC logs include `TCPLoRaRadio initialized successfully`.
 

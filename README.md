@@ -1,8 +1,8 @@
 # sx1302-meshcore-kiss
 
-MeshCore-compatible pyMC TCP and KISS modem daemon for SX1302/WM1302 concentrators.
+MeshCore-compatible SX1302/WM1302 driver and modem service.
 
-This branch includes a native pyMC TCP modem implementation for `pymc_core.hardware.tcp_radio.TCPLoRaRadio`. It is **not KISS-over-TCP**: the daemon speaks pyMC's native `0xAA | CMD | LEN | PAYLOAD | CRC16` radio protocol on TCP port `5055` by default, while still keeping the existing KISS PTY/serial bridge for compatibility. The daemon owns the SX1302/WM1302 hardware using a daemon-local driver layer that follows Semtech `libloragw` / `lgw_*` HAL semantics for board, RF chain, IF chain, RX, TX, status, and airtime operations.
+This branch adds a host-facing modem service around a daemon-local SX1302/WM1302 driver. The default host transport is pyMC's native `0xAA | CMD | LEN | PAYLOAD | CRC16` protocol on TCP port `5055`, with the existing KISS PTY/serial path kept as a compatibility transport. The service owns the concentrator hardware using a driver layer that follows Semtech `libloragw` / `lgw_*` HAL semantics for board, RF chain, IF chain, RX, TX, status, and airtime operations.
 
 ```text
 pyMC_Repeater / pyMC_core
@@ -20,24 +20,23 @@ SX1302 / SX1303 concentrator + SX1250 radios, e.g. WM1302
 
 ## What this is for
 
-Use this when you want existing MeshCore/pyMC software to treat an SX1302/WM1302 concentrator like a native pyMC TCP modem, with KISS kept as a fallback compatibility path.
+Use this when you want existing MeshCore/pyMC software to use an SX1302/WM1302 concentrator through this driver service instead of talking to the radio hardware directly.
 
 The daemon is responsible for:
 
-- listening for native pyMC TCP radio clients;
-- creating the KISS PTY or opening the configured serial endpoint when KISS compatibility is used;
-- accepting MeshCore KISS data and SetHardware control frames;
-- accepting pyMC TCP `SET_CONFIG`, `TX_REQUEST`, status, noise, CAD, and RX-start commands;
-- configuring the SX1302/WM1302 radio from daemon config and host SetHardware requests;
+- listening for the configured host transport;
+- creating the host endpoint, such as native pyMC TCP or a compatibility PTY/serial endpoint;
+- accepting host TX, radio config, status, noise, CAD, and RX-start commands;
+- configuring the SX1302/WM1302 radio from daemon config and host requests;
 - resetting and starting the concentrator using board-specific SPI/GPIO settings;
 - transmitting and receiving LoRa packets through the SX1302 driver layer;
-- returning native pyMC TCP RX/TX/status frames, KISS data, `TxDone`, metadata, counters, MQTT telemetry, and dashboard state.
+- returning RX/TX/status frames, metadata, counters, MQTT telemetry, and dashboard state.
 
-pyMC/pyMC_Repeater should use `TCPLoRaRadio` / `pymc_tcp` for this branch unless you explicitly need the older KISS bridge.
+pyMC/pyMC_Repeater should use the configured service transport, normally `TCPLoRaRadio` / `pymc_tcp`, unless you explicitly need the compatibility KISS endpoint.
 
 ## Status
 
-Prototype/alpha. The daemon, KISS protocol handling, config path, dashboard APIs, and adapter behavior are unit-tested. Hardware deployment still requires board-specific validation of SPI, GPIO reset pins, RF settings, legal TX configuration, and pyMC KISS integration.
+Prototype/alpha. The driver service, host protocol handling, config path, dashboard APIs, and adapter behavior are unit-tested. Hardware deployment still requires board-specific validation of SPI, GPIO reset pins, RF settings, legal TX configuration, and pyMC integration.
 
 Current expected test result on a development machine:
 
@@ -70,7 +69,7 @@ Current expected test result on a development machine:
 - PTY endpoint with default symlink `/run/sx1302-meshcore-kiss/sx1302-kiss`.
 - Serial endpoint for real tty devices.
 - Standalone SX1302 adapter with `semtech_c_hal` backend selection; vanilla pyMC is only a KISS peer.
-- CRC policy inside the KISS daemon/service boundary:
+- CRC policy inside the driver service boundary:
   - `crc_ok=True`: forward to pyMC, MQTT `rx/good`, dashboard event.
   - `crc_ok=False`: drop from pyMC, MQTT `rx/bad_crc`, dashboard event.
   - `crc_ok=None`: drop by default, optional lab-only forwarding.
@@ -92,13 +91,13 @@ Current expected test result on a development machine:
 ## Documentation
 
 - [`docs/install.md`](docs/install.md): full install, service, config, and validation guide.
-- [`docs/cricket-test-deploy.md`](docs/cricket-test-deploy.md): clean SenseCAP Cricket redeploy checklist for the native pyMC TCP driver.
+- [`docs/cricket-test-deploy.md`](docs/cricket-test-deploy.md): clean SenseCAP Cricket redeploy checklist for the SX1302 driver service.
 - [`docs/architecture.md`](docs/architecture.md): daemon architecture and boundary notes.
 - [`docs/62k5-tx-rx-notes.md`](docs/62k5-tx-rx-notes.md): 62.5 kHz SX1302/SX1261 TX/RX fixes, current split, diagnostics, and live test values.
 
 ## Quick start
 
-### 1. Clone and install the SX1302 KISS bridge
+### 1. Clone and install the SX1302 driver service
 
 ```bash
 git clone --branch pymc-tcp-dev --single-branch https://github.com/l34rn3d/KISS_MeshCore_SX1302.git sx1302-meshcore-kiss
@@ -113,11 +112,13 @@ The included default config is now based on the known-good `cricket` SenseCAP/WM
 http://<device-ip>:8080/
 ```
 
-The native pyMC TCP modem listens here by default:
+The default host endpoint listens here:
 
 ```text
 0.0.0.0:5055
 ```
+
+The dashboard also has a **Host Interface** card where you can switch between `pymc_tcp` and standalone `kiss`, save the config, and restart the service. Transport changes take effect after restart.
 
 ### 2. Install pyMC_Repeater and edit its config
 
@@ -127,7 +128,7 @@ Install pyMC_Repeater using its normal installer/instructions, then edit its con
 sudo editor /etc/pymc_repeater/config.yaml
 ```
 
-Set pyMC_Repeater to native TCP mode and point it at the local SX1302 daemon:
+Set pyMC_Repeater to the service transport and point it at the local driver endpoint:
 
 ```yaml
 radio_type: pymc_tcp
@@ -146,13 +147,13 @@ pymc_tcp:
   token: ""
 ```
 
-Restart pyMC_Repeater after the SX1302 bridge is running:
+Restart pyMC_Repeater after the SX1302 driver service is running:
 
 ```bash
 sudo systemctl restart pymc-repeater.service
 ```
 
-### 3. Clean up / remove the SX1302 bridge
+### 3. Clean up / remove the SX1302 driver service
 
 Preview what would be removed:
 
@@ -208,9 +209,9 @@ sudo cp config.example.yaml /etc/sx1302-meshcore-kiss/config.yaml
 sudo editor /etc/sx1302-meshcore-kiss/config.yaml
 ```
 
-The packaged `config.example.yaml` is a SenseCAP/WM1302 baseline copied from the known-good cricket deployment. It defaults to native `pymc_tcp` on port `5055`. The bridge config owns hardware/backend/reset/dashboard policy; pyMC sends live RF values over native TCP `SET_CONFIG` after it connects.
+The packaged `config.example.yaml` is a SenseCAP/WM1302 baseline copied from the known-good cricket deployment. It defaults to the `pymc_tcp` host transport on port `5055`. The service config owns hardware/backend/reset/dashboard policy; pyMC sends live RF values after it connects.
 
-Key bridge defaults are:
+Key driver defaults are:
 
 ```yaml
 radio:
@@ -232,7 +233,7 @@ dashboard:
   bind_host: "0.0.0.0"
 ```
 
-Do **not** add the old generic `915000000/SF8/null SX1261` values to the bridge config. Use the pyMC snippet above for the MeshCore RF settings: `915075000`, BW125, SF9, CR4/5, sync word `13380`, TX power `26`.
+Do **not** add the old generic `915000000/SF8/null SX1261` values to the driver config. Use the pyMC snippet above for the MeshCore RF settings: `915075000`, BW125, SF9, CR4/5, sync word `13380`, TX power `26`.
 
 Install and start the service:
 
@@ -248,7 +249,7 @@ sudo systemctl enable --now sx1302-meshcore-kiss.service
 sudo systemctl status sx1302-meshcore-kiss.service
 ```
 
-For pyMC_Repeater on the same host, point its radio config at the daemon's native TCP listener:
+For pyMC_Repeater on the same host, point its radio config at the driver service endpoint:
 
 ```yaml
 radio_type: pymc_tcp
@@ -284,7 +285,7 @@ Expected signs of a good deployment:
 - the GPIO reset sequence completes without permission errors;
 - the SX1302/WM1302 start path succeeds;
 - pyMC_Repeater logs `TCPLoRaRadio initialized successfully`;
-- pyMC TCP `SET_CONFIG` configures radio frequency, bandwidth, spreading factor, coding rate, and TX power;
+- pyMC configures radio frequency, bandwidth, spreading factor, coding rate, and TX power through the service;
 - TX is tested only when legal and intentional.
 
 ## Safety notes
@@ -314,8 +315,8 @@ Current expected result:
 
 Next practical hardening steps:
 
-1. Harden authenticated pyMC TCP client broadcast handling.
+1. Harden authenticated host-client broadcast handling.
 2. Add multi-client TX serialization if `max_clients > 1` is used.
-3. Add end-to-end integration test with a fake pyMC TCP client and fake SX1302 adapter.
+3. Add end-to-end integration test with a fake pyMC host client and fake SX1302 adapter.
 4. Keep KISS fallback tested for compatibility users.
 5. Improve periodic MQTT/status publishing and real connection tracking.

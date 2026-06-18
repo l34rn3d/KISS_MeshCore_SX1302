@@ -1,4 +1,5 @@
 import json
+from unittest.mock import patch
 from urllib import request
 
 from sx1302_meshcore_kiss.config import AppConfig, load_config, radio_profiles, redact_config
@@ -154,6 +155,44 @@ def test_dashboard_can_apply_radio_profile():
         server.stop()
 
 
+def test_dashboard_can_save_transport(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config = AppConfig(node_id="node")
+    config.dashboard.port = 0
+    server = DashboardServer(config=config, counters=Counters(), ring=PacketRingBuffer(maxlen=10), config_path=config_path)
+    server.start()
+    try:
+        base = f"http://{server.bind_host}:{server.port}"
+        body = json.dumps({"transport": "kiss"}).encode()
+        req = request.Request(base + "/api/transport", data=body, headers={"Content-Type": "application/json"}, method="POST")
+        applied = json.loads(request.urlopen(req, timeout=2).read())
+
+        assert applied["ok"] is True
+        assert applied["transport"] == "kiss"
+        assert config.transport == "kiss"
+        assert config.pymc_tcp.enabled is False
+        assert "transport: kiss" in config_path.read_text()
+    finally:
+        server.stop()
+
+
+def test_dashboard_restart_endpoint_schedules_process_restart():
+    config = AppConfig(node_id="node")
+    config.dashboard.port = 0
+    server = DashboardServer(config=config, counters=Counters(), ring=PacketRingBuffer(maxlen=10))
+    server.start()
+    try:
+        base = f"http://{server.bind_host}:{server.port}"
+        with patch.object(DashboardServer, "_restart_process_later") as restart:
+            req = request.Request(base + "/api/restart", data=b"{}", headers={"Content-Type": "application/json"}, method="POST")
+            applied = json.loads(request.urlopen(req, timeout=2).read())
+
+        assert applied == {"ok": True, "restart": "scheduled"}
+        restart.assert_called_once()
+    finally:
+        server.stop()
+
+
 def test_dashboard_homepage_is_usable_status_ui():
     ring = PacketRingBuffer(maxlen=50)
     ring.add({
@@ -185,7 +224,10 @@ def test_dashboard_homepage_is_usable_status_ui():
         assert "node-ui" in html
         assert "Radio" in html
         assert "MQTT" in html
-        assert "KISS" in html
+        assert "Compatibility / MQTT" in html
+        assert "Host Interface" in html
+        assert "Save transport" in html
+        assert "Restart service" in html
         assert "Counters" in html
         assert "Latest packet events" in html
         assert "fetch('/api/status')" in html or "getJson('/api/status')" in html

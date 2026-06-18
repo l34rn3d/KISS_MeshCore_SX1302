@@ -29,7 +29,7 @@ Default behavior:
   - copies this checkout, or clones ${BRANCH} from GitHub if not run in a checkout
   - creates ${SERVICE_USER}
   - creates a Python venv and installs the package
-  - builds the Semtech C HAL bridge library used by cricket
+  - builds the Semtech C HAL driver library used by cricket
   - creates ${CONFIG_DIR}/config.yaml if missing
   - installs/enables the systemd service, but does NOT start it unless --start is used
 
@@ -203,7 +203,7 @@ create_venv_and_install() {
 
 build_semtech_bridge() {
   if [[ -x "${INSTALL_DIR}/tools/build_semtech_bridge.sh" ]]; then
-    log "Building Semtech C HAL bridge"
+    log "Building Semtech C HAL driver library"
     "${INSTALL_DIR}/tools/build_semtech_bridge.sh" "${INSTALL_DIR}/build/c_hal"
   else
     warn "Semtech C HAL build script not found; semtech_c_hal backend will not start until libmeshcore_lgw.so exists"
@@ -214,10 +214,12 @@ install_config() {
   log "Ensuring config exists at ${CONFIG_DIR}/config.yaml"
   install -d -m 0755 "${CONFIG_DIR}"
   if [[ ! -f "${CONFIG_DIR}/config.yaml" ]]; then
-    install -m 0640 -o root -g "${SERVICE_USER}" "${INSTALL_DIR}/config.example.yaml" "${CONFIG_DIR}/config.yaml"
+    install -m 0660 -o root -g "${SERVICE_USER}" "${INSTALL_DIR}/config.example.yaml" "${CONFIG_DIR}/config.yaml"
     warn "Created example config. Edit board-specific SPI/GPIO values only if this is not a SenseCAP/WM1302 cricket-style install."
   else
     warn "Keeping existing config: ${CONFIG_DIR}/config.yaml"
+    chown root:"${SERVICE_USER}" "${CONFIG_DIR}/config.yaml"
+    chmod 0660 "${CONFIG_DIR}/config.yaml"
   fi
 }
 
@@ -254,7 +256,7 @@ Install path:  ${INSTALL_DIR}
 Config path:   ${CONFIG_DIR}/config.yaml
 Service user:  ${SERVICE_USER}
 Service:       ${SERVICE_NAME}
-pyMC TCP:      0.0.0.0:5055 by default
+Host endpoint: 0.0.0.0:5055 by default
 Dashboard:     http://<device-ip>:8080/
 
 Next steps:
@@ -264,7 +266,7 @@ Next steps:
      sudo systemctl start ${SERVICE_NAME}
   3. Watch logs:
      journalctl -u ${SERVICE_NAME} -n 100 --no-pager
-  4. Point pyMC_Repeater at native pymc_tcp on 127.0.0.1:5055.
+  4. Point pyMC_Repeater at the configured service endpoint, usually 127.0.0.1:5055.
 
 SUMMARY
 }
