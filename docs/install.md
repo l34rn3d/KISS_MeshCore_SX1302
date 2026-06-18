@@ -1,4 +1,4 @@
-# Install / deploy sx1302-meshcore-kiss
+# Install / deploy pyMC_SX1302_Driver
 
 This is the deployment guide for the SX1302 MeshCore driver and modem service.
 
@@ -26,8 +26,8 @@ Enable SPI in the board firmware/config before starting the service.
 ### 1. Clone and install the SX1302 driver service
 
 ```bash
-git clone --branch pymc-tcp-dev --single-branch https://github.com/l34rn3d/KISS_MeshCore_SX1302.git sx1302-meshcore-kiss
-cd sx1302-meshcore-kiss
+git clone --branch pymc-tcp-dev --single-branch https://github.com/l34rn3d/pymc_tcp_SX1302_Driver.git pyMC_SX1302_Driver
+cd pyMC_SX1302_Driver
 sudo ./scripts/install.sh --start
 sudo editor /etc/sx1302-meshcore-kiss/config.yaml
 ```
@@ -104,8 +104,8 @@ sudo ./scripts/cleanup.sh --yes --purge-config --remove-user
 The easiest path is to clone the repo and run the installer:
 
 ```bash
-git clone --branch pymc-tcp-dev --single-branch https://github.com/l34rn3d/KISS_MeshCore_SX1302.git sx1302-meshcore-kiss
-cd sx1302-meshcore-kiss
+git clone --branch pymc-tcp-dev --single-branch https://github.com/l34rn3d/pymc_tcp_SX1302_Driver.git pyMC_SX1302_Driver
+cd pyMC_SX1302_Driver
 sudo ./scripts/install.sh
 ```
 
@@ -138,7 +138,7 @@ Manual install steps are below for troubleshooting or custom layouts.
 ```bash
 sudo mkdir -p /opt
 cd /opt
-sudo git clone --branch pymc-tcp-dev --single-branch https://github.com/l34rn3d/KISS_MeshCore_SX1302.git sx1302-meshcore-kiss
+sudo git clone --branch pymc-tcp-dev --single-branch https://github.com/l34rn3d/pymc_tcp_SX1302_Driver.git sx1302-meshcore-kiss
 cd /opt/sx1302-meshcore-kiss
 ```
 

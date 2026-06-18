@@ -1,5 +1,5 @@
 [Unit]
-Description=SX1302 MeshCore KISS Modem using Semtech-style driver
+Description=pyMC SX1302 Driver using Semtech-style driver boundary
 After=network-online.target
 Wants=network-online.target
 

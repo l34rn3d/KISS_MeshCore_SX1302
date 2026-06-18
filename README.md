@@ -1,6 +1,6 @@
-# sx1302-meshcore-kiss
+# pyMC_SX1302_Driver
 
-MeshCore-compatible SX1302/WM1302 driver and modem service.
+pyMC-compatible SX1302/WM1302 driver and modem service.
 
 This branch adds a host-facing modem service around a daemon-local SX1302/WM1302 driver. The default host transport is pyMC's native `0xAA | CMD | LEN | PAYLOAD | CRC16` protocol on TCP port `5055`, with the existing KISS PTY/serial path kept as a compatibility transport. The service owns the concentrator hardware using a driver layer that follows Semtech `libloragw` / `lgw_*` HAL semantics for board, RF chain, IF chain, RX, TX, status, and airtime operations.
 
@@ -9,7 +9,7 @@ pyMC_Repeater / pyMC_core
         ⇅
 Native pyMC TCP, usually host:5055, or KISS PTY / serial fallback
         ⇅
-sx1302-meshcore-kiss daemon
+pyMC_SX1302_Driver service
         ⇅
 Semtech-style SX1302/WM1302 driver layer
         ⇅
@@ -100,8 +100,8 @@ Current expected test result on a development machine:
 ### 1. Clone and install the SX1302 driver service
 
 ```bash
-git clone --branch pymc-tcp-dev --single-branch https://github.com/l34rn3d/KISS_MeshCore_SX1302.git sx1302-meshcore-kiss
-cd sx1302-meshcore-kiss
+git clone --branch pymc-tcp-dev --single-branch https://github.com/l34rn3d/pymc_tcp_SX1302_Driver.git pyMC_SX1302_Driver
+cd pyMC_SX1302_Driver
 sudo ./scripts/install.sh --start
 sudo editor /etc/sx1302-meshcore-kiss/config.yaml
 ```
@@ -178,8 +178,8 @@ sudo ./scripts/cleanup.sh --yes --purge-config --remove-user
 Full install/service notes are in [`docs/install.md`](docs/install.md). The easiest path on the target SBC is:
 
 ```bash
-git clone --branch pymc-tcp-dev --single-branch https://github.com/l34rn3d/KISS_MeshCore_SX1302.git sx1302-meshcore-kiss
-cd sx1302-meshcore-kiss
+git clone --branch pymc-tcp-dev --single-branch https://github.com/l34rn3d/pymc_tcp_SX1302_Driver.git pyMC_SX1302_Driver
+cd pyMC_SX1302_Driver
 sudo ./scripts/install.sh --start
 ```
 
@@ -301,7 +301,7 @@ Expected signs of a good deployment:
 ## Test
 
 ```bash
-cd sx1302-meshcore-kiss
+cd pyMC_SX1302_Driver
 PYTHONPATH=src pytest -q
 ```
 

@@ -3,14 +3,14 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "sx1302-meshcore-kiss"
+name = "pyMC_SX1302_Driver"
 version = "0.1.0"
-description = "MeshCore KISS modem daemon for SX1302/WM1302 concentrators using a Semtech-style driver boundary"
+description = "pyMC-compatible SX1302/WM1302 driver and modem service using a Semtech-style driver boundary"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Hermes Agent" }]
-keywords = ["meshcore", "kiss", "sx1302", "wm1302", "lora"]
+keywords = ["pymc", "meshcore", "sx1302", "wm1302", "lora"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "License :: OSI Approved :: MIT License",
@@ -33,6 +33,7 @@ dev = [
 ]
 
 [project.scripts]
+pymc-sx1302-driver = "sx1302_meshcore_kiss.main:main"
 sx1302-meshcore-kiss = "sx1302_meshcore_kiss.main:main"
 
 [tool.setuptools.packages.find]

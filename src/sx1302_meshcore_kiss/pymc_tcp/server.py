@@ -342,9 +342,9 @@ class PyMCTcpServer:
     @staticmethod
     def _version_payload() -> bytes:
         try:
-            text = f"sx1302-meshcore-kiss/{version('sx1302-meshcore-kiss')} pymc_tcp"
+            text = f"pyMC_SX1302_Driver/{version('pyMC_SX1302_Driver')} pymc_tcp"
         except PackageNotFoundError:
-            text = "sx1302-meshcore-kiss pymc_tcp"
+            text = "pyMC_SX1302_Driver pymc_tcp"
         return text.encode("ascii", errors="replace")
 
     @staticmethod

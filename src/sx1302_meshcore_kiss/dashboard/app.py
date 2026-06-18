@@ -24,7 +24,7 @@ def _dashboard_html(node_id: str) -> bytes:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>SX1302 MeshCore Driver - {safe_node_id}</title>
+  <title>pyMC SX1302 Driver - {safe_node_id}</title>
   <style>
     :root {{
       color-scheme: dark;
@@ -124,7 +124,7 @@ def _dashboard_html(node_id: str) -> bytes:
   <header>
     <div class="header-inner">
       <div>
-        <h1>SX1302 MeshCore Driver</h1>
+        <h1>pyMC SX1302 Driver</h1>
         <div class="subtitle">Node <strong id="node-id">{safe_node_id}</strong> · <span id="updated">loading…</span></div>
       </div>
       <span id="overall-badge" class="pill warn">starting</span>

@@ -20,9 +20,9 @@ sudo rm -rf /opt/sx1302-meshcore-kiss /etc/sx1302-meshcore-kiss /var/log/sx1302-
 
 ```bash
 cd /home/claude
-rm -rf sx1302-meshcore-kiss
-git clone --branch pymc-tcp-dev --single-branch https://github.com/l34rn3d/KISS_MeshCore_SX1302.git sx1302-meshcore-kiss
-cd sx1302-meshcore-kiss
+rm -rf pyMC_SX1302_Driver
+git clone --branch pymc-tcp-dev --single-branch https://github.com/l34rn3d/pymc_tcp_SX1302_Driver.git pyMC_SX1302_Driver
+cd pyMC_SX1302_Driver
 sudo ./scripts/install.sh --start
 ```
 

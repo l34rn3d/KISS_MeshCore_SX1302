@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-APP_NAME="sx1302-meshcore-kiss"
+APP_NAME="pyMC_SX1302_Driver"
 SERVICE_NAME="sx1302-meshcore-kiss.service"
-REPO_URL="https://github.com/l34rn3d/KISS_MeshCore_SX1302.git"
+REPO_URL="https://github.com/l34rn3d/pymc_tcp_SX1302_Driver.git"
 BRANCH="pymc-tcp-dev"
 INSTALL_DIR="/opt/sx1302-meshcore-kiss"
 CONFIG_DIR="/etc/sx1302-meshcore-kiss"
@@ -117,7 +117,7 @@ find_source_dir() {
   local script_dir candidate
   script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
   candidate="$(cd -- "${script_dir}/.." && pwd)"
-  if [[ -f "${candidate}/pyproject.toml" ]] && grep -q 'name = "sx1302-meshcore-kiss"' "${candidate}/pyproject.toml"; then
+  if [[ -f "${candidate}/pyproject.toml" ]] && grep -Eq 'name = "(pyMC_SX1302_Driver|sx1302-meshcore-kiss)"' "${candidate}/pyproject.toml"; then
     SOURCE_DIR="${candidate}"
     return
   fi
@@ -174,7 +174,7 @@ install_source_tree() {
 
   if [[ -e "${INSTALL_DIR}" ]]; then
     if [[ ${FORCE} -ne 1 ]]; then
-      if [[ -f "${INSTALL_DIR}/pyproject.toml" ]] && grep -q 'name = "sx1302-meshcore-kiss"' "${INSTALL_DIR}/pyproject.toml"; then
+      if [[ -f "${INSTALL_DIR}/pyproject.toml" ]] && grep -Eq 'name = "(pyMC_SX1302_Driver|sx1302-meshcore-kiss)"' "${INSTALL_DIR}/pyproject.toml"; then
         log "Existing ${APP_NAME} install found at ${INSTALL_DIR}; updating files in place"
       else
         fatal "${INSTALL_DIR} already exists and does not look like ${APP_NAME}; use --install-dir or --force"
