@@ -62,7 +62,7 @@ HOTSPOT_PROFILES: dict[str, dict[str, Any]] = {
     "nebra-light3": {"friendly": "Nebra Raspberry Pi Zero Light Hotspot II SE", "spi_device": "/dev/spidev1.2", "reset_pin": 4},
     "rak-fl1": {"friendly": "RAK v1.5 / RAK v2 / MNTD", "spi_device": "/dev/spidev0.0", "reset_pin": 25},
     "helium-fl1": {"friendly": "Original Helium Hotspot", "spi_device": "/dev/spidev0.0", "reset_pin": 25},
-    "sensecap-fl1": {"friendly": "SenseCAP M1", "spi_device": "/dev/spidev0.0", "reset_pin": 17},
+    "sensecap-fl1": {"friendly": "SenseCAP M1", "spi_device": "/dev/spidev0.0", "reset_pin": 17, "startup_profile": "sensecap_wm1302_pinctrl"},
     "pantherx1-fl1": {"friendly": "Panther X1", "spi_device": "/dev/spidev0.0", "reset_pin": 23},
     "finestra-fl1": {"friendly": "Finestra Miner", "spi_device": "/dev/spidev0.0", "reset_pin": 17},
     "pisces-fl1": {"friendly": "Pisces P100", "spi_device": "/dev/spidev0.0", "reset_pin": 23},
@@ -297,20 +297,30 @@ def apply_hotspot_profile(config: AppConfig, hotspot: str, *, explicit_radio_key
         return False
     explicit = explicit_radio_keys or set()
     config.startup.hotspot = str(hotspot)
-    env = {"CONCENTRATOR_RESET_PIN": str(profile["reset_pin"])}
-    if profile.get("sx125x_reset_pin") is not None:
-        env["SX125x_RESET_PIN"] = str(profile["sx125x_reset_pin"])
-    values = {
-        "reset_enabled": True,
-        "reset_script_path": "/opt/sx1302-meshcore-kiss/tools/reset_lgw_nebra.sh",
-        "reset_script_args": ["start"],
-        "reset_script_env": env,
+    startup_profile = str(profile.get("startup_profile") or "")
+    values = {}
+    if startup_profile and startup_profile in STARTUP_PROFILES:
+        config.startup.profile = startup_profile
+        values.update({k: v for k, v in STARTUP_PROFILES[startup_profile].items() if k != "description"})
+        values.setdefault("reset_script_args", [])
+        values.setdefault("reset_script_env", {})
+    else:
+        env = {"CONCENTRATOR_RESET_PIN": str(profile["reset_pin"])}
+        if profile.get("sx125x_reset_pin") is not None:
+            env["SX125x_RESET_PIN"] = str(profile["sx125x_reset_pin"])
+        values.update({
+            "reset_enabled": True,
+            "reset_script_path": "/opt/sx1302-meshcore-kiss/tools/reset_lgw_nebra.sh",
+            "reset_script_args": ["start"],
+            "reset_script_env": env,
+            "sx1261_reset_pin": int(profile["sx125x_reset_pin"]) if profile.get("sx125x_reset_pin") is not None else None,
+            "power_enable_pin": None,
+            "adc_reset_pin": None,
+        })
+    values.update({
         "spi_device": profile["spi_device"],
         "sx1302_reset_pin": int(profile["reset_pin"]),
-        "sx1261_reset_pin": int(profile["sx125x_reset_pin"]) if profile.get("sx125x_reset_pin") is not None else None,
-        "power_enable_pin": None,
-        "adc_reset_pin": None,
-    }
+    })
     for key, value in values.items():
         if key not in explicit and hasattr(config.radio, key):
             setattr(config.radio, key, value)

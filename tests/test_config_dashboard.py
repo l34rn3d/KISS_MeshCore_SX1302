@@ -134,6 +134,36 @@ def test_dashboard_can_apply_hotspot_profile():
         server.stop()
 
 
+def test_dashboard_applies_sensecap_as_coherent_startup_profile():
+    config = AppConfig(node_id="node")
+    config.dashboard.port = 0
+    config.startup.profile = "nebra_helium_docker"
+    config.radio.reset_script_path = "/opt/sx1302-meshcore-kiss/tools/reset_lgw_nebra.sh"
+    config.radio.reset_script_args = ["start"]
+    config.radio.reset_script_env = {"CONCENTRATOR_RESET_PIN": "23"}
+    config.radio.sx1302_reset_pin = 23
+    config.radio.sx1261_reset_pin = 22
+    server = DashboardServer(config=config, counters=Counters(), ring=PacketRingBuffer(maxlen=10))
+    server.start()
+    try:
+        base = f"http://{server.bind_host}:{server.port}"
+        body = json.dumps({"hotspot": "sensecap-fl1"}).encode()
+        req = request.Request(base + "/api/hotspot-profile", data=body, headers={"Content-Type": "application/json"}, method="POST")
+        applied = json.loads(request.urlopen(req, timeout=2).read())
+
+        assert applied["ok"] is True
+        assert config.startup.profile == "sensecap_wm1302_pinctrl"
+        assert config.startup.hotspot == "sensecap-fl1"
+        assert config.radio.reset_script_path == "/opt/sx1302-meshcore-kiss/tools/reset_wm1302_pinctrl.sh"
+        assert config.radio.reset_script_args == []
+        assert config.radio.reset_script_env == {}
+        assert config.radio.sx1302_reset_pin == 17
+        assert config.radio.sx1261_reset_pin == 5
+        assert config.radio.adc_reset_pin == 13
+    finally:
+        server.stop()
+
+
 def test_dashboard_can_apply_radio_profile():
     config = AppConfig(node_id="node")
     config.dashboard.port = 0
