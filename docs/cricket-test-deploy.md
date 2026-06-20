@@ -52,6 +52,24 @@ radio:
   sx1261_spi_path: "/dev/spidev0.1"
 ```
 
+For Cricket/SenseCAP M1, the hotspot profile must apply the full SenseCAP reset profile, not just reset pin `17`. The coherent expected reset set is:
+
+```yaml
+startup:
+  profile: "sensecap_wm1302_pinctrl"
+  hotspot: "sensecap-fl1"
+radio:
+  reset_script_path: "/opt/sx1302-meshcore-kiss/tools/reset_wm1302_pinctrl.sh"
+  reset_script_args: []
+  reset_script_env: {}
+  power_enable_pin: 18
+  sx1302_reset_pin: 17
+  sx1261_reset_pin: 5
+  adc_reset_pin: 13
+```
+
+Other hotspot models are best-effort until tested on matching hardware. If HAL can read a chip version but fails with `Failed to set SX1250_0 in STANDBY_RC mode`, suspect an incomplete or mismatched reset profile first.
+
 ## 4. Configure pyMC Repeater
 
 Edit `/etc/pymc_repeater/config.yaml` so pyMC uses the driver service instead of direct radio hardware:

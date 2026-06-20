@@ -46,6 +46,29 @@ The default host endpoint listens here:
 
 The dashboard also has a **Host Interface** card where you can switch between `pymc_tcp` and standalone `kiss`, save the config, and restart the service. Transport changes take effect after restart.
 
+## Hardware Profile Confidence
+
+Hotspot profiles are hardware reset profiles, not just labels. An SX1302/WM1302 board may need a coherent set of settings:
+
+- startup/reset script style;
+- SPI device paths;
+- power enable pin;
+- concentrator reset pin;
+- SX1261/SX125x reset pin;
+- ADC reset pin;
+- reset arguments/environment;
+- reset ordering and timing.
+
+`sensecap-fl1` has been live-checked on Cricket and maps to `sensecap_wm1302_pinctrl` as a full reset profile. Other hotspot profiles are best-effort unless they have been tested on the exact matching hardware. A partially correct profile can make the SX1302 visible on SPI while the RF chain still fails, commonly with errors like:
+
+```text
+Failed to set SX1250_0 in STANDBY_RC mode
+failed to setup radio 0
+mc_lgw_start() failed with code -1
+```
+
+If that happens, verify the selected hotspot profile, reset script, reset pins, power enable pin, and companion-radio reset pin before assuming the radio or SPI bus is bad.
+
 ### 2. Install pyMC_Repeater and edit its config
 
 Install pyMC_Repeater using its normal installer/instructions, then edit its config file:

@@ -81,8 +81,10 @@ Current expected test result on a development machine:
   - `/api/packets`
   - `/api/config`
   - `/api/startup-profiles`
-  - `/api/hotspot-profiles`
-  - `/api/hotspot-profile` for selecting the installed hotspot model and applying its SPI/reset GPIO defaults
+- `/api/hotspot-profiles`
+- `/api/hotspot-profile` for selecting the installed hotspot model and applying its SPI/reset GPIO defaults
+
+Hotspot dropdown entries are loaded from one YAML file per hotspot. Packaged defaults live in `src/sx1302_meshcore_kiss/hotspot_profiles/`; installed/editable copies are seeded into `/etc/sx1302-meshcore-kiss/hotspots/`. Copy `_template.yaml` to a new `name.yaml` file to add a board, or edit an existing file to change its SPI/reset pins. Re-running the installer keeps existing files in `/etc/sx1302-meshcore-kiss/hotspots/`.
 - In-memory packet ring buffer only, default max 50 events.
 - Config redaction for secrets.
 - Basic systemd unit example.
@@ -119,6 +121,8 @@ The default host endpoint listens here:
 ```
 
 The dashboard also has a **Host Interface** card where you can switch between `pymc_tcp` and standalone `kiss`, save the config, and restart the service. Transport changes take effect after restart.
+
+Hardware profile confidence varies by board. `sensecap-fl1` has been live-checked on Cricket and applies the full SenseCAP reset profile. Other hotspot profiles should be treated as best-effort until tested on matching hardware, because SX1302 boards may need more than a single concentrator reset pin. See [`docs/install.md`](docs/install.md#hardware-profile-confidence).
 
 ### 2. Install pyMC_Repeater and edit its config
 
