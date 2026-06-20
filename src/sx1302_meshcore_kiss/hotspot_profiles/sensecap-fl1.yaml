@@ -1,4 +1,7 @@
 friendly: "SenseCAP M1"
 spi_device: "/dev/spidev0.0"
+power_enable_pin: 18
 reset_pin: 17
+sx1261_reset_pin: 5
+adc_reset_pin: 13
 startup_profile: "sensecap_wm1302_pinctrl"

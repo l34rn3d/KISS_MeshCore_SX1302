@@ -1,3 +1,6 @@
 friendly: "Nebra Indoor Hotspot Gen 1"
 spi_device: "/dev/spidev1.2"
+power_enable_pin: null
 reset_pin: 38
+sx1261_reset_pin: null
+adc_reset_pin: null

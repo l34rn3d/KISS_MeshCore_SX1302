@@ -1,3 +1,6 @@
 friendly: "Heltec HT-M2808"
 spi_device: "/dev/spidev32766.0"
-reset_pin: 2
+power_enable_pin: 0
+reset_pin: 84
+sx1261_reset_pin: 83
+adc_reset_pin: null

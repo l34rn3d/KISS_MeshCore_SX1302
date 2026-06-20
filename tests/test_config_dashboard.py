@@ -29,10 +29,12 @@ def test_load_config_defaults_to_network_dashboard_and_pty(tmp_path):
     assert config.radio.coding_rate is None
     assert config.radio.tx_power_dbm is None
     assert config.radio.sync_word is None
-    assert config.radio.sx1261_spi_path is None
+    assert config.radio.sx1261_spi_path == "/dev/spidev0.1"
+    assert config.radio.power_enable_pin == 18
     assert config.radio.sx1302_reset_pin == 17
-    assert config.radio.sx1261_reset_pin is None
-    assert config.radio.reset_script_env["CONCENTRATOR_RESET_PIN"] == "17"
+    assert config.radio.sx1261_reset_pin == 5
+    assert config.radio.adc_reset_pin == 13
+    assert config.radio.reset_script_env == {}
     assert config.manual_radio.enabled is False
     assert "meshcore_eu_default" in radio_profiles()
 
@@ -49,6 +51,24 @@ def test_example_config_uses_full_sensecap_reset_profile():
     assert config.radio.sx1302_reset_pin == 17
     assert config.radio.sx1261_reset_pin == 5
     assert config.radio.adc_reset_pin == 13
+
+
+def test_packaged_hotspot_profiles_include_full_pin_shape():
+    profiles = hotspot_profiles()
+
+    for name, profile in profiles.items():
+        assert "power_enable_pin" in profile, name
+        assert "reset_pin" in profile, name
+        assert "sx1261_reset_pin" in profile, name
+        assert "adc_reset_pin" in profile, name
+
+    assert profiles["sensecap-fl1"]["power_enable_pin"] == 18
+    assert profiles["sensecap-fl1"]["reset_pin"] == 17
+    assert profiles["sensecap-fl1"]["sx1261_reset_pin"] == 5
+    assert profiles["sensecap-fl1"]["adc_reset_pin"] == 13
+    assert profiles["linxdot-rk3566-fl1"]["power_enable_pin"] == 23
+    assert profiles["linxdot-rk3566-fl1"]["reset_pin"] == 15
+    assert profiles["linxdot-rk3566-fl1"]["sx1261_reset_pin"] == 17
 
 
 def test_manual_radio_profile_populates_rf_config(tmp_path):
@@ -106,6 +126,24 @@ def test_load_config_uses_external_hotspot_profile(tmp_path, monkeypatch):
     assert config.startup.hotspot == "custom-board"
     assert config.radio.spi_device == "/dev/spidev9.0"
     assert config.radio.sx1302_reset_pin == 44
+    assert config.radio.sx1261_reset_pin is None
+    assert config.radio.power_enable_pin is None
+    assert config.radio.adc_reset_pin is None
+
+
+def test_external_hotspot_profile_accepts_legacy_sx125x_alias(tmp_path, monkeypatch):
+    profile_dir = tmp_path / "hotspots"
+    profile_dir.mkdir()
+    monkeypatch.setenv(HOTSPOT_PROFILE_ENV, str(profile_dir))
+    (profile_dir / "custom-board.yaml").write_text('friendly: "Custom Board"\nspi_device: "/dev/spidev9.0"\nreset_pin: 44\nsx125x_reset_pin: 77\n')
+    path = tmp_path / "config.yaml"
+    path.write_text('startup:\n  hotspot: "custom-board"\n')
+
+    config = load_config(path)
+
+    assert config.radio.sx1302_reset_pin == 44
+    assert config.radio.sx1261_reset_pin == 77
+    assert config.radio.reset_script_env["SX125x_RESET_PIN"] == "77"
 
 
 def test_load_config_rejects_unknown_transport(tmp_path):
@@ -174,7 +212,35 @@ def test_dashboard_can_apply_hotspot_profile():
         assert config.startup.hotspot == "rak-fl1"
         assert config.radio.spi_device == "/dev/spidev0.0"
         assert config.radio.sx1302_reset_pin == 25
+        assert config.radio.sx1261_reset_pin is None
+        assert config.radio.power_enable_pin is None
+        assert config.radio.adc_reset_pin is None
         assert config.radio.reset_script_env["CONCENTRATOR_RESET_PIN"] == "25"
+    finally:
+        server.stop()
+
+
+def test_dashboard_can_apply_linxdot_rk3566_full_pins():
+    config = AppConfig(node_id="node")
+    config.dashboard.port = 0
+    server = DashboardServer(config=config, counters=Counters(), ring=PacketRingBuffer(maxlen=10))
+    server.start()
+    try:
+        base = f"http://{server.bind_host}:{server.port}"
+        body = json.dumps({"hotspot": "linxdot-rk3566-fl1"}).encode()
+        req = request.Request(base + "/api/hotspot-profile", data=body, headers={"Content-Type": "application/json"}, method="POST")
+        applied = json.loads(request.urlopen(req, timeout=2).read())
+
+        assert applied["ok"] is True
+        assert config.radio.spi_device == "/dev/spidev0.0"
+        assert config.radio.power_enable_pin == 23
+        assert config.radio.sx1302_reset_pin == 15
+        assert config.radio.sx1261_reset_pin == 17
+        assert config.radio.adc_reset_pin is None
+        assert config.radio.reset_script_env["CONCENTRATOR_RESET_PIN"] == "15"
+        assert config.radio.reset_script_env["SX125x_RESET_PIN"] == "17"
+        assert config.radio.reset_script_env["SX1302_POWER_EN_PIN"] == "23"
+        assert "AD5338R_RESET_PIN" not in config.radio.reset_script_env
     finally:
         server.stop()
 

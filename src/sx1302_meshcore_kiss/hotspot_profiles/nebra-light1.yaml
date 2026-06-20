@@ -1,3 +1,6 @@
 friendly: "Nebra Pi 0 Light Hotspot SE"
 spi_device: "/dev/spidev1.2"
+power_enable_pin: null
 reset_pin: 22
+sx1261_reset_pin: null
+adc_reset_pin: null

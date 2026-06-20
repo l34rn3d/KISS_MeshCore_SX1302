@@ -1,3 +1,6 @@
 friendly: "Panther X1"
 spi_device: "/dev/spidev0.0"
+power_enable_pin: null
 reset_pin: 23
+sx1261_reset_pin: null
+adc_reset_pin: null

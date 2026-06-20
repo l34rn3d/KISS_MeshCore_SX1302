@@ -125,8 +125,14 @@ def _coerce_hotspot_profile(name: str, data: Any) -> dict[str, Any] | None:
         return None
     profile["spi_device"] = str(profile["spi_device"])
     profile["reset_pin"] = int(profile["reset_pin"])
+    for key in ("power_enable_pin", "sx1261_reset_pin", "adc_reset_pin"):
+        if key in profile and profile[key] is not None:
+            profile[key] = int(profile[key])
     if profile.get("sx125x_reset_pin") is not None:
         profile["sx125x_reset_pin"] = int(profile["sx125x_reset_pin"])
+        profile.setdefault("sx1261_reset_pin", profile["sx125x_reset_pin"])
+    for key in ("power_enable_pin", "sx1261_reset_pin", "adc_reset_pin"):
+        profile.setdefault(key, None)
     if profile.get("startup_profile") is not None:
         profile["startup_profile"] = str(profile["startup_profile"])
     return profile
@@ -348,14 +354,18 @@ def apply_hotspot_profile(config: AppConfig, hotspot: str, *, explicit_radio_key
         values.setdefault("reset_script_env", {})
     else:
         env = {"CONCENTRATOR_RESET_PIN": str(profile["reset_pin"])}
-        if profile.get("sx125x_reset_pin") is not None:
-            env["SX125x_RESET_PIN"] = str(profile["sx125x_reset_pin"])
+        if profile.get("sx1261_reset_pin") is not None:
+            env["SX125x_RESET_PIN"] = str(profile["sx1261_reset_pin"])
+        if profile.get("power_enable_pin") is not None:
+            env["SX1302_POWER_EN_PIN"] = str(profile["power_enable_pin"])
+        if profile.get("adc_reset_pin") is not None:
+            env["AD5338R_RESET_PIN"] = str(profile["adc_reset_pin"])
         values.update({
             "reset_enabled": True,
             "reset_script_path": "/opt/sx1302-meshcore-kiss/tools/reset_lgw_nebra.sh",
             "reset_script_args": ["start"],
             "reset_script_env": env,
-            "sx1261_reset_pin": int(profile["sx125x_reset_pin"]) if profile.get("sx125x_reset_pin") is not None else None,
+            "sx1261_reset_pin": None,
             "power_enable_pin": None,
             "adc_reset_pin": None,
         })
@@ -363,6 +373,13 @@ def apply_hotspot_profile(config: AppConfig, hotspot: str, *, explicit_radio_key
         "spi_device": profile["spi_device"],
         "sx1302_reset_pin": int(profile["reset_pin"]),
     })
+    for profile_key, radio_key in (
+        ("power_enable_pin", "power_enable_pin"),
+        ("sx1261_reset_pin", "sx1261_reset_pin"),
+        ("adc_reset_pin", "adc_reset_pin"),
+    ):
+        if profile_key in profile:
+            values[radio_key] = profile[profile_key]
     for key, value in values.items():
         if key not in explicit and hasattr(config.radio, key):
             setattr(config.radio, key, value)

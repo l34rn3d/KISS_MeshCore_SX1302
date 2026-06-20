@@ -1,3 +1,6 @@
 friendly: "Linxdot RK3566 Hotspot"
 spi_device: "/dev/spidev0.0"
-reset_pin: 17
+power_enable_pin: 23
+reset_pin: 15
+sx1261_reset_pin: 17
+adc_reset_pin: null

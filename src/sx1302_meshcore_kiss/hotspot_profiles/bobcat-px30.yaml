@@ -1,3 +1,6 @@
 friendly: "Bobcat PX30 Hotspot"
 spi_device: "/dev/spidev1.0"
+power_enable_pin: null
 reset_pin: 104
+sx1261_reset_pin: null
+adc_reset_pin: null

@@ -1,3 +1,6 @@
 friendly: "Syncrobit CM4 Hotspot"
 spi_device: "/dev/spidev0.0"
+power_enable_pin: null
 reset_pin: 17
+sx1261_reset_pin: null
+adc_reset_pin: null

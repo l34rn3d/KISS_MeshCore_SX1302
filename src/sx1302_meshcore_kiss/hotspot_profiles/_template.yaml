@@ -13,14 +13,21 @@ friendly: "My Hotspot Model"
 # Some Nebra/RockPi/Bobcat boards use different SPI buses.
 spi_device: "/dev/spidev0.0"
 
+# Optional GPIO line that enables SX1302/CoreCell power. Use null if the board
+# reset script does not drive a separate power-enable line.
+power_enable_pin: null
+
 # GPIO line number used to reset the SX1302 concentrator.
 # This must be the Linux GPIO line number expected by the board reset script,
 # not necessarily the physical header pin number.
 reset_pin: 23
 
-# Optional companion/SX125x/SX1261 reset pin. Leave null if the board only has
-# a concentrator reset pin or if you do not know the companion reset line.
-sx125x_reset_pin: null
+# Optional companion/SX125x/SX1261 reset pin. Leave null if the board only has a
+# concentrator reset pin or if you do not know the companion reset line.
+sx1261_reset_pin: null
+
+# Optional AD5338R/full-duplex ADC reset pin. Usually null on hotspot boards.
+adc_reset_pin: null
 
 # Optional startup profile that applies a complete reset policy from
 # STARTUP_PROFILES in src/sx1302_meshcore_kiss/config.py. Use this when a board
