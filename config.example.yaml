@@ -27,7 +27,7 @@ startup:
   # Available profiles are shown on the HTTP dashboard config page:
   # nebra_helium_docker, sensecap_wm1302_pinctrl, semtech_reset_lgw_sysfs,
   # gpioset_fallback, no_reset.
-  profile: "nebra_helium_docker"
+  profile: "sensecap_wm1302_pinctrl"
   # Select the installed hotspot model in the HTTP dashboard, or set it here.
   # Hotspot dropdown entries are loaded from one YAML file per hotspot in:
   # /etc/sx1302-meshcore-kiss/hotspots/*.yaml
@@ -59,14 +59,13 @@ radio:
   reset_enabled: true
   reset_required: false
   # Leave unset to use startup.profile defaults, or set explicitly to override.
-  reset_script_path: "/opt/sx1302-meshcore-kiss/tools/reset_lgw_nebra.sh"
-  reset_script_args: ["start"]
-  reset_script_env:
-    CONCENTRATOR_RESET_PIN: "17"
+  reset_script_path: "/opt/sx1302-meshcore-kiss/tools/reset_wm1302_pinctrl.sh"
+  reset_script_args: []
+  reset_script_env: {}
   gpio_chip: "gpiochip0"
   power_enable_pin: 18
-  sx1302_reset_pin: 23
-  sx1261_reset_pin: 22
+  sx1302_reset_pin: 17
+  sx1261_reset_pin: 5
   adc_reset_pin: 13
   duty_cycle_enforcement: "raise"
   lbt_enabled: true

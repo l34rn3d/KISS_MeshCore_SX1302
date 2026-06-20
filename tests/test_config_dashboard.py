@@ -37,6 +37,20 @@ def test_load_config_defaults_to_network_dashboard_and_pty(tmp_path):
     assert "meshcore_eu_default" in radio_profiles()
 
 
+def test_example_config_uses_full_sensecap_reset_profile():
+    config = load_config("config.example.yaml")
+
+    assert config.startup.profile == "sensecap_wm1302_pinctrl"
+    assert config.startup.hotspot == "sensecap-fl1"
+    assert config.radio.reset_script_path == "/opt/sx1302-meshcore-kiss/tools/reset_wm1302_pinctrl.sh"
+    assert config.radio.reset_script_args == []
+    assert config.radio.reset_script_env == {}
+    assert config.radio.power_enable_pin == 18
+    assert config.radio.sx1302_reset_pin == 17
+    assert config.radio.sx1261_reset_pin == 5
+    assert config.radio.adc_reset_pin == 13
+
+
 def test_manual_radio_profile_populates_rf_config(tmp_path):
     path = tmp_path / "config.yaml"
     path.write_text('manual_radio:\n  enabled: true\n  profile: "meshcore_eu_default"\n  auto_start: true\n')
