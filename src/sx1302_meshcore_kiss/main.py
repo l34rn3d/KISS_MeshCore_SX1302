@@ -4,10 +4,11 @@ import argparse
 import asyncio
 import logging
 import signal
+import time
 from pathlib import Path
 from typing import Any
 
-from sx1302_meshcore_kiss.config import load_config
+from sx1302_meshcore_kiss.config import load_config, redact_config
 from sx1302_meshcore_kiss.dashboard.app import DashboardServer
 from sx1302_meshcore_kiss.kiss.codec import KissDecodeError
 from sx1302_meshcore_kiss.kiss.pty_endpoint import PtyEndpoint
@@ -239,7 +240,49 @@ async def _noise_scan_loop(*, adapter: SX1302Adapter, stop: asyncio.Event) -> No
             logger.exception("Periodic noise scan error")
 
 
+async def _mqtt_telemetry_loop(
+    *,
+    cfg: Any,
+    mqtt: MqttPublisher,
+    counters: Counters,
+    ring: PacketRingBuffer,
+    status_provider: Any,
+    stop: asyncio.Event,
+    started_at: float,
+) -> None:
+    while not stop.is_set():
+        try:
+            uptime_seconds = int(time.monotonic() - started_at)
+            status = {"node_id": cfg.node_id, "schema": "sx1302_meshcore_kiss.status.v1", "uptime_seconds": uptime_seconds, **status_provider()}
+            health = {
+                "schema": "sx1302_meshcore_kiss.health.v1",
+                "node_id": cfg.node_id,
+                "uptime_seconds": uptime_seconds,
+                "transport": cfg.transport,
+                "mqtt_connected": mqtt.connected,
+                "radio_state": status.get("radio", {}).get("state"),
+                "radio_started": bool(status.get("radio", {}).get("started")),
+                "pymc_tcp_connected_clients": int(status.get("pymc_tcp", {}).get("connected_clients") or 0),
+                "tx_error_count": counters.tx_error_count,
+                "rx_dropped_count": counters.rx_dropped_count,
+                "mqtt_publish_error_count": counters.mqtt_publish_error_count,
+            }
+            await mqtt.publish_event("status", status, retain=mqtt.retain_status, qos=mqtt.qos_status)
+            await mqtt.publish_event("health", health, retain=mqtt.retain_status, qos=mqtt.qos_status)
+            await mqtt.publish_event("counters", counters.snapshot(node_id=cfg.node_id, uptime_seconds=uptime_seconds), retain=mqtt.retain_status, qos=mqtt.qos_status)
+            await mqtt.publish_event("config", {"schema": "sx1302_meshcore_kiss.config.v1", "node_id": cfg.node_id, "config": redact_config(cfg)}, retain=mqtt.retain_status, qos=mqtt.qos_status)
+            await mqtt.publish_event("packets/recent", {"schema": "sx1302_meshcore_kiss.packets.recent.v1", "node_id": cfg.node_id, "packets": ring.snapshot()}, retain=False, qos=mqtt.qos_events)
+        except Exception:
+            counters.mqtt_publish_error_count += 1
+            logger.exception("Periodic MQTT telemetry publish failed")
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=max(1, int(cfg.status.publish_interval_seconds)))
+        except asyncio.TimeoutError:
+            pass
+
+
 async def run(config_path: str) -> None:
+    started_at = time.monotonic()
     cfg = load_config(config_path)
     _configure_logging(cfg)
 
@@ -259,12 +302,13 @@ async def run(config_path: str) -> None:
         forward_unknown_crc=cfg.crc.forward_unknown_crc,
     )
     pymc_tcp = PyMCTcpServer(config=cfg, adapter=adapter, counters=counters, ring=ring, mqtt=mqtt) if cfg.transport == "pymc_tcp" else None
+    status_provider = _build_status_provider(cfg=cfg, adapter=adapter, mqtt=mqtt, counters=counters, pymc_tcp=pymc_tcp)
     dashboard = (
         DashboardServer(
             config=cfg,
             counters=counters,
             ring=ring,
-            status_provider=_build_status_provider(cfg=cfg, adapter=adapter, mqtt=mqtt, counters=counters, pymc_tcp=pymc_tcp),
+            status_provider=status_provider,
             config_path=config_path,
         )
         if cfg.dashboard.enabled
@@ -288,7 +332,10 @@ async def run(config_path: str) -> None:
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, stop.set)
 
-    tasks = [asyncio.create_task(_noise_scan_loop(adapter=adapter, stop=stop))]
+    tasks = [
+        asyncio.create_task(_noise_scan_loop(adapter=adapter, stop=stop)),
+        asyncio.create_task(_mqtt_telemetry_loop(cfg=cfg, mqtt=mqtt, counters=counters, ring=ring, status_provider=status_provider, stop=stop, started_at=started_at)),
+    ]
     if cfg.transport == "kiss":
         tasks.append(asyncio.create_task(_kiss_loop(kiss=kiss, service=service, mqtt=mqtt, ring=ring, counters=counters, stop=stop)))
         tasks.append(asyncio.create_task(_rx_loop(adapter=adapter, service=service, stop=stop)))
