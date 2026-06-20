@@ -1,0 +1,4 @@
+friendly: "Pycom Hotspot"
+spi_device: "/dev/spidev0.0"
+reset_pin: 23
+sx125x_reset_pin: 2

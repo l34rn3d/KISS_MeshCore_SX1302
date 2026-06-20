@@ -1,0 +1,30 @@
+# Copy this file to a new name like my-hotspot.yaml, then edit the values.
+# Files whose names start with "_" are ignored by the dashboard loader.
+
+# Set enabled to true after filling in real values. Set enabled: false in a file
+# with the same name as a bundled profile to hide that bundled profile.
+enabled: false
+
+# Human-friendly label shown in the dashboard dropdown.
+friendly: "My Hotspot Model"
+
+# Linux SPI device for the SX1302 concentrator.
+# Common Raspberry Pi / CM4 value: /dev/spidev0.0
+# Some Nebra/RockPi/Bobcat boards use different SPI buses.
+spi_device: "/dev/spidev0.0"
+
+# GPIO line number used to reset the SX1302 concentrator.
+# This must be the Linux GPIO line number expected by the board reset script,
+# not necessarily the physical header pin number.
+reset_pin: 23
+
+# Optional companion/SX125x/SX1261 reset pin. Leave null if the board only has
+# a concentrator reset pin or if you do not know the companion reset line.
+sx125x_reset_pin: null
+
+# Optional startup profile that applies a complete reset policy from
+# STARTUP_PROFILES in src/sx1302_meshcore_kiss/config.py. Use this when a board
+# needs more than reset_pin + spi_device, such as a custom reset script,
+# power-enable pin, ADC reset pin, or reset order.
+# Known useful value for SenseCAP/WM1302: sensecap_wm1302_pinctrl
+startup_profile: null

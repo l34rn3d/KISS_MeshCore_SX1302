@@ -39,6 +39,9 @@ sx1302-meshcore-kiss = "sx1302_meshcore_kiss.main:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+sx1302_meshcore_kiss = ["hotspot_profiles/*.yaml"]
+
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 asyncio_mode = "auto"

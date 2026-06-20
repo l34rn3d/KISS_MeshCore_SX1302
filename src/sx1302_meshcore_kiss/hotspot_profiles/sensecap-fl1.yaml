@@ -1,0 +1,4 @@
+friendly: "SenseCAP M1"
+spi_device: "/dev/spidev0.0"
+reset_pin: 17
+startup_profile: "sensecap_wm1302_pinctrl"

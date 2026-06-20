@@ -29,6 +29,9 @@ startup:
   # gpioset_fallback, no_reset.
   profile: "nebra_helium_docker"
   # Select the installed hotspot model in the HTTP dashboard, or set it here.
+  # Hotspot dropdown entries are loaded from one YAML file per hotspot in:
+  # /etc/sx1302-meshcore-kiss/hotspots/*.yaml
+  # Use _template.yaml in that directory as the starting point for new boards.
   # Examples: sensecap-fl1, rak-fl1, helium-fl1, nebra-indoor1, bobcat-rk3566.
   hotspot: "sensecap-fl1"
 

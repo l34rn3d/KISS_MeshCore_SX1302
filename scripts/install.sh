@@ -213,6 +213,7 @@ build_semtech_bridge() {
 install_config() {
   log "Ensuring config exists at ${CONFIG_DIR}/config.yaml"
   install -d -m 0755 "${CONFIG_DIR}"
+  install -d -m 0755 "${CONFIG_DIR}/hotspots"
   if [[ ! -f "${CONFIG_DIR}/config.yaml" ]]; then
     install -m 0660 -o root -g "${SERVICE_USER}" "${INSTALL_DIR}/config.example.yaml" "${CONFIG_DIR}/config.yaml"
     warn "Created example config. Edit board-specific SPI/GPIO values only if this is not a SenseCAP/WM1302 cricket-style install."
@@ -220,6 +221,15 @@ install_config() {
     warn "Keeping existing config: ${CONFIG_DIR}/config.yaml"
     chown root:"${SERVICE_USER}" "${CONFIG_DIR}/config.yaml"
     chmod 0660 "${CONFIG_DIR}/config.yaml"
+  fi
+  if [[ -d "${INSTALL_DIR}/src/sx1302_meshcore_kiss/hotspot_profiles" ]]; then
+    local profile
+    for profile in "${INSTALL_DIR}/src/sx1302_meshcore_kiss/hotspot_profiles/"*.yaml; do
+      if [[ ! -f "${CONFIG_DIR}/hotspots/$(basename "${profile}")" ]]; then
+        install -m 0664 -o root -g "${SERVICE_USER}" "${profile}" "${CONFIG_DIR}/hotspots/"
+      fi
+    done
+    warn "Hotspot profile files are editable at ${CONFIG_DIR}/hotspots/*.yaml"
   fi
 }
 

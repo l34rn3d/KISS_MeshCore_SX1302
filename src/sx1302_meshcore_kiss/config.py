@@ -1,9 +1,15 @@
 from __future__ import annotations
 from dataclasses import asdict, dataclass, field, is_dataclass
+from importlib import resources
+import os
 from pathlib import Path
 from typing import Any, Optional
 import yaml
 from sx1302_meshcore_kiss.sx1302.metadata import RadioConfig
+
+HOTSPOT_PROFILE_ENV = "SX1302_HOTSPOT_PROFILE_DIR"
+HOTSPOT_PROFILE_DIR = Path("/etc/sx1302-meshcore-kiss/hotspots")
+_PACKAGE_HOTSPOT_PROFILE_DIR = "hotspot_profiles"
 
 STARTUP_PROFILES: dict[str, dict[str, Any]] = {
     "sensecap_wm1302_pinctrl": {
@@ -50,34 +56,6 @@ STARTUP_PROFILES: dict[str, dict[str, Any]] = {
         "description": "Do not reset GPIOs before starting SX1302",
         "reset_enabled": False,
     },
-}
-
-HOTSPOT_PROFILES: dict[str, dict[str, Any]] = {
-    "nebra-indoor1": {"friendly": "Nebra Indoor Hotspot Gen 1", "spi_device": "/dev/spidev1.2", "reset_pin": 38},
-    "nebra-outdoor1": {"friendly": "Nebra Outdoor Hotspot Gen 1", "spi_device": "/dev/spidev1.2", "reset_pin": 38},
-    "nebra-indoor2": {"friendly": "Nebra ROCK Pi 4 Indoor", "spi_device": "/dev/spidev32766.0", "reset_pin": 149},
-    "nebra-outdoor2": {"friendly": "Nebra ROCK Pi 4 Outdoor", "spi_device": "/dev/spidev32766.0", "reset_pin": 149},
-    "nebra-light1": {"friendly": "Nebra Pi 0 Light Hotspot SE", "spi_device": "/dev/spidev1.2", "reset_pin": 22},
-    "nebra-light2": {"friendly": "Nebra Radxa Zero Light Hotspot II SE", "spi_device": "/dev/spidev0.0", "reset_pin": 415},
-    "nebra-light3": {"friendly": "Nebra Raspberry Pi Zero Light Hotspot II SE", "spi_device": "/dev/spidev1.2", "reset_pin": 4},
-    "rak-fl1": {"friendly": "RAK v1.5 / RAK v2 / MNTD", "spi_device": "/dev/spidev0.0", "reset_pin": 25},
-    "helium-fl1": {"friendly": "Original Helium Hotspot", "spi_device": "/dev/spidev0.0", "reset_pin": 25},
-    "sensecap-fl1": {"friendly": "SenseCAP M1", "spi_device": "/dev/spidev0.0", "reset_pin": 17, "startup_profile": "sensecap_wm1302_pinctrl"},
-    "pantherx1-fl1": {"friendly": "Panther X1", "spi_device": "/dev/spidev0.0", "reset_pin": 23},
-    "finestra-fl1": {"friendly": "Finestra Miner", "spi_device": "/dev/spidev0.0", "reset_pin": 17},
-    "pisces-fl1": {"friendly": "Pisces P100", "spi_device": "/dev/spidev0.0", "reset_pin": 23},
-    "controllino-fl1": {"friendly": "Controllino / Conelcom Hotspot", "spi_device": "/dev/spidev0.0", "reset_pin": 4},
-    "linxdot-fl1": {"friendly": "Linxdot CM4 Hotspot", "spi_device": "/dev/spidev0.0", "reset_pin": 17},
-    "linxdot-rk3566-fl1": {"friendly": "Linxdot RK3566 Hotspot", "spi_device": "/dev/spidev0.0", "reset_pin": 17},
-    "pycom-fl1": {"friendly": "Pycom Hotspot", "spi_device": "/dev/spidev0.0", "reset_pin": 23, "sx125x_reset_pin": 2},
-    "syncrobit-fl1": {"friendly": "Syncrobit CM4 Hotspot", "spi_device": "/dev/spidev0.0", "reset_pin": 17},
-    "syncrobit-rkcm3-fl1": {"friendly": "Syncrobit RockPi Hotspot", "spi_device": "/dev/spidev0.0", "reset_pin": 17},
-    "cotx-fl1": {"friendly": "COTX X3", "spi_device": "/dev/spidev0.0", "reset_pin": 22},
-    "risinghf-fl1": {"friendly": "RisingHF Hotspot", "spi_device": "/dev/spidev1.0", "reset_pin": 38},
-    "midas-fl1": {"friendly": "Midas Hotspot", "spi_device": "/dev/spidev0.0", "reset_pin": 17},
-    "bobcat-px30": {"friendly": "Bobcat PX30 Hotspot", "spi_device": "/dev/spidev1.0", "reset_pin": 104},
-    "bobcat-rk3566": {"friendly": "Bobcat RK3566 Hotspot", "spi_device": "/dev/spidev5.0", "reset_pin": 149},
-    "heltec-fl1": {"friendly": "Heltec HT-M2808", "spi_device": "/dev/spidev32766.0", "reset_pin": 2},
 }
 
 RADIO_PROFILES: dict[str, dict[str, Any]] = {
@@ -133,6 +111,74 @@ RADIO_PROFILES: dict[str, dict[str, Any]] = {
     },
 }
 
+
+def hotspot_profile_dir() -> Path:
+    return Path(os.environ.get(HOTSPOT_PROFILE_ENV, HOTSPOT_PROFILE_DIR))
+
+
+def _coerce_hotspot_profile(name: str, data: Any) -> dict[str, Any] | None:
+    if not isinstance(data, dict) or data.get("enabled") is False:
+        return None
+    profile = {k: v for k, v in data.items() if k != "enabled"}
+    profile.setdefault("friendly", name)
+    if "spi_device" not in profile or "reset_pin" not in profile:
+        return None
+    profile["spi_device"] = str(profile["spi_device"])
+    profile["reset_pin"] = int(profile["reset_pin"])
+    if profile.get("sx125x_reset_pin") is not None:
+        profile["sx125x_reset_pin"] = int(profile["sx125x_reset_pin"])
+    if profile.get("startup_profile") is not None:
+        profile["startup_profile"] = str(profile["startup_profile"])
+    return profile
+
+
+def _load_hotspot_profile_file(name: str, text: str) -> dict[str, Any] | None:
+    return _coerce_hotspot_profile(name, yaml.safe_load(text) or {})
+
+
+def _load_packaged_hotspot_profiles() -> dict[str, dict[str, Any]]:
+    profiles: dict[str, dict[str, Any]] = {}
+    base = resources.files(__package__).joinpath(_PACKAGE_HOTSPOT_PROFILE_DIR)
+    for entry in sorted(base.iterdir(), key=lambda item: item.name):
+        if not entry.name.endswith((".yaml", ".yml")) or entry.name.startswith("_"):
+            continue
+        profile = _load_hotspot_profile_file(Path(entry.name).stem, entry.read_text())
+        if profile:
+            profiles[Path(entry.name).stem] = profile
+    return profiles
+
+
+def _load_external_hotspot_profiles() -> dict[str, dict[str, Any] | None]:
+    profiles: dict[str, dict[str, Any] | None] = {}
+    directory = hotspot_profile_dir()
+    if not directory.is_dir():
+        return profiles
+    for path in sorted(directory.glob("*.y*ml")):
+        if path.name.startswith("_"):
+            continue
+        raw = yaml.safe_load(path.read_text()) or {}
+        if isinstance(raw, dict) and raw.get("enabled") is False:
+            profiles[path.stem] = None
+            continue
+        profile = _coerce_hotspot_profile(path.stem, raw)
+        if profile:
+            profiles[path.stem] = profile
+    return profiles
+
+
+def hotspot_profiles() -> dict[str, dict[str, Any]]:
+    profiles = _load_packaged_hotspot_profiles()
+    for name, profile in _load_external_hotspot_profiles().items():
+        if profile is None:
+            profiles.pop(name, None)
+        else:
+            profiles[name] = profile
+    return profiles
+
+
+def hotspot_profile_names() -> list[str]:
+    return list(hotspot_profiles().keys())
+
 @dataclass
 class KissConfig:
     mode: str = "pty"
@@ -155,7 +201,7 @@ class StartupConfig:
     profile: str = "nebra_helium_docker"
     hotspot: str = "sensecap-fl1"
     options: list[str] = field(default_factory=lambda: list(STARTUP_PROFILES.keys()))
-    hotspot_options: list[str] = field(default_factory=lambda: list(HOTSPOT_PROFILES.keys()))
+    hotspot_options: list[str] = field(default_factory=hotspot_profile_names)
 
 @dataclass
 class ManualRadioConfig:
@@ -271,10 +317,6 @@ def startup_profiles() -> dict[str, dict[str, Any]]:
     return {name: dict(values) for name, values in STARTUP_PROFILES.items()}
 
 
-def hotspot_profiles() -> dict[str, dict[str, Any]]:
-    return {name: dict(values) for name, values in HOTSPOT_PROFILES.items()}
-
-
 def radio_profiles() -> dict[str, dict[str, Any]]:
     return {name: dict(values) for name, values in RADIO_PROFILES.items()}
 
@@ -292,7 +334,7 @@ def apply_radio_profile(config: AppConfig, profile_name: str, *, explicit_radio_
 
 
 def apply_hotspot_profile(config: AppConfig, hotspot: str, *, explicit_radio_keys: set[str] | None = None) -> bool:
-    profile = HOTSPOT_PROFILES.get(str(hotspot))
+    profile = hotspot_profiles().get(str(hotspot))
     if not profile:
         return False
     explicit = explicit_radio_keys or set()

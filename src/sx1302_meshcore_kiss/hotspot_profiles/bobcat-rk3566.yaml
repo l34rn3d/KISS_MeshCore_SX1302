@@ -1,0 +1,3 @@
+friendly: "Bobcat RK3566 Hotspot"
+spi_device: "/dev/spidev5.0"
+reset_pin: 149

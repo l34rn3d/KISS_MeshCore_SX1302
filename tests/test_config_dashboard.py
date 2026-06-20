@@ -2,7 +2,7 @@ import json
 from unittest.mock import patch
 from urllib import request
 
-from sx1302_meshcore_kiss.config import AppConfig, load_config, radio_profiles, redact_config
+from sx1302_meshcore_kiss.config import AppConfig, HOTSPOT_PROFILE_ENV, hotspot_profiles, load_config, radio_profiles, redact_config
 from sx1302_meshcore_kiss.dashboard.app import DashboardServer
 from sx1302_meshcore_kiss.telemetry.counters import Counters
 from sx1302_meshcore_kiss.telemetry.ring_buffer import PacketRingBuffer
@@ -61,6 +61,37 @@ def test_manual_radio_profile_preserves_explicit_radio_overrides(tmp_path):
 
     assert config.radio.frequency_hz == 915_000_000
     assert config.radio.bandwidth_hz == 62_500
+
+
+def test_hotspot_profiles_load_external_add_override_and_disable(tmp_path, monkeypatch):
+    profile_dir = tmp_path / "hotspots"
+    profile_dir.mkdir()
+    monkeypatch.setenv(HOTSPOT_PROFILE_ENV, str(profile_dir))
+    (profile_dir / "custom-board.yaml").write_text('friendly: "Custom Board"\nspi_device: "/dev/spidev9.0"\nreset_pin: 44\n')
+    (profile_dir / "rak-fl1.yaml").write_text('friendly: "Edited RAK"\nspi_device: "/dev/spidev8.0"\nreset_pin: 88\n')
+    (profile_dir / "helium-fl1.yaml").write_text('enabled: false\n')
+
+    profiles = hotspot_profiles()
+
+    assert profiles["custom-board"]["reset_pin"] == 44
+    assert profiles["rak-fl1"]["friendly"] == "Edited RAK"
+    assert profiles["rak-fl1"]["spi_device"] == "/dev/spidev8.0"
+    assert "helium-fl1" not in profiles
+
+
+def test_load_config_uses_external_hotspot_profile(tmp_path, monkeypatch):
+    profile_dir = tmp_path / "hotspots"
+    profile_dir.mkdir()
+    monkeypatch.setenv(HOTSPOT_PROFILE_ENV, str(profile_dir))
+    (profile_dir / "custom-board.yaml").write_text('friendly: "Custom Board"\nspi_device: "/dev/spidev9.0"\nreset_pin: 44\n')
+    path = tmp_path / "config.yaml"
+    path.write_text('startup:\n  hotspot: "custom-board"\n')
+
+    config = load_config(path)
+
+    assert config.startup.hotspot == "custom-board"
+    assert config.radio.spi_device == "/dev/spidev9.0"
+    assert config.radio.sx1302_reset_pin == 44
 
 
 def test_load_config_rejects_unknown_transport(tmp_path):

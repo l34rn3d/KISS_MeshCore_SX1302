@@ -1,0 +1,3 @@
+friendly: "Nebra ROCK Pi 4 Outdoor"
+spi_device: "/dev/spidev32766.0"
+reset_pin: 149

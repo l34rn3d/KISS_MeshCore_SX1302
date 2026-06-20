@@ -1,0 +1,3 @@
+friendly: "Nebra Indoor Hotspot Gen 1"
+spi_device: "/dev/spidev1.2"
+reset_pin: 38
